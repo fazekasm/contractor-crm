@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { signInWithGoogle, signOutUser, onAuthChange, loadFromFirestore, saveToFirestore } from './firebase.js';
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
@@ -74,7 +75,10 @@ const defaultData = () => ({
 });
 
 const loadData = () => { try { return { ...defaultData(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch { return defaultData(); } };
-const saveData = d => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} };
+const saveData = (d, uid) => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {}
+  if (uid) saveToFirestore(uid, d).catch(console.error);
+};
 
 // ─── THEME CONTEXT ────────────────────────────────────────────────────────────
 const getTheme = (themeData) => {
@@ -1127,11 +1131,35 @@ function Settings({ data, setData, t }) {
 export default function App() {
   const [data, setDataRaw] = useState(loadData);
   const [tab, setTab] = useState("dashboard");
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const userRef = useRef(null);
+
+  useEffect(() => {
+    return onAuthChange(async (u) => {
+      userRef.current = u;
+      setUser(u);
+      setAuthLoading(false);
+      if (u) {
+        setSyncing(true);
+        try {
+          const cloudData = await loadFromFirestore(u.uid);
+          if (cloudData) {
+            const merged = { ...defaultData(), ...cloudData };
+            setDataRaw(merged);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          }
+        } catch(e) { console.error("Firestore load error:", e); }
+        setSyncing(false);
+      }
+    });
+  }, []);
 
   const setData = useCallback(u => {
     setDataRaw(p => {
       const n = typeof u === "function" ? u(p) : u;
-      saveData(n);
+      saveData(n, userRef.current?.uid);
       return n;
     });
   }, []);
@@ -1151,8 +1179,36 @@ export default function App() {
   const unpaid = data.invoices.filter(i => i.status !== "paid").length;
   const unsigned = data.invoices.filter(i => i.status !== "paid" && !i.signedAt).length;
 
+  if (authLoading) return (
+    <div style={{ minHeight: '100vh', background: '#0d1520', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: '#94a3b8', fontSize: 16 }}>Loading…</div>
+    </div>
+  );
+
+  if (!user) return (
+    <div style={{ minHeight: '100vh', background: '#0d1520', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <span style={{ color: '#fff', fontSize: 32, fontWeight: 800 }}>C</span>
+        </div>
+        <div style={{ color: '#2563eb', fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>Contractor CRM</div>
+        <div style={{ color: '#f0f6ff', fontSize: 26, fontWeight: 800, marginTop: 6 }}>Sign in to continue</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 8 }}>Your data syncs across all devices automatically</div>
+      </div>
+      <button onClick={signInWithGoogle} style={{ background: '#fff', color: '#1f2937', border: 'none', borderRadius: 12, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+        <svg width='20' height='20' viewBox='0 0 48 48'>
+          <path fill='#4285F4' d='M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-21 0-1.3-.2-2.7-.5-4z'/>
+          <path fill='#34A853' d='M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 6.4 6.3 14.7z'/>
+          <path fill='#FBBC05' d='M24 46c5.8 0 10.8-1.9 14.8-5.2l-6.8-5.6C29.9 37 27.1 38 24 38c-5.8 0-10.6-3-13.2-7.5l-7 5.4C7.4 41.8 15.2 46 24 46z'/>
+          <path fill='#EA4335' d='M44.5 20H24v8.5h11.8C34.1 32.7 29.5 35.5 24 35.5c-5.7 0-10.6-3.5-12.9-8.5l-7 5.4C7.3 40.3 15.1 45 24 45c6 0 11.4-2.2 15.4-5.9l.1-.1C43.5 35 46 29.9 46 24c0-1.4-.2-2.8-.5-4z'/>
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight: '100vh', background: t.bg, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
       <div style={{ background: t.surface, borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1165,7 +1221,9 @@ export default function App() {
             <div style={{ color: t.text, fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{data.company.name || "My Business"}</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {syncing && <div style={{ background: "#1e3a5f", border: "1px solid #2563eb", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#60a5fa", fontWeight: 700 }}>syncing…</div>}
+          <div onClick={signOutUser} title='Sign out' style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '3px 10px', fontSize: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
           {unsigned > 0 && <div style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#a78bfa", fontWeight: 700 }}>{unsigned} sig</div>}
           {unpaid > 0 && <div style={{ background: "#431407", border: "1px solid #f97316", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#f97316", fontWeight: 700 }}>{unpaid} unpaid</div>}
         </div>
