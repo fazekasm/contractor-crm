@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { signInWithGoogle, signOutUser, onAuthChange, loadFromFirestore, saveToFirestore } from './firebase.js';
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
@@ -11,6 +10,36 @@ const THEMES = {
   "Midnight Dark":   { accent:"#7c3aed", accent2:"#6d28d9", border:"#2e1065", bg:"#09050f", surface:"#130a1f", surface2:"#09050f", text:"#faf5ff", subtext:"#a78bfa", muted:"#2e1065" },
   "Custom":          { accent:"#2563eb", accent2:"#1d4ed8", border:"#1e3a5f", bg:"#0d1520", surface:"#161f2e", surface2:"#0d1520", text:"#f0f6ff", subtext:"#94a3b8", muted:"#334155" },
 };
+
+// ─── CONTRACTOR AI SYSTEM PROMPT ─────────────────────────────────────────────
+const CONTRACTOR_SYSTEM_PROMPT = `You are an expert construction estimator with 20+ years of experience in residential remodeling and renovation. You have deep knowledge of labor rates by trade, material costs, waste factors, permit requirements, and project sequencing.
+
+YOUR JOB: When given a job description, generate a detailed accurate line-item estimate.
+
+OUTPUT FORMAT — Respond with ONLY a valid JSON object, no other text, no markdown fences:
+{"scopeSummary":"2-3 sentence professional scope description","lines":[{"description":"Line item","qty":1,"unit":"ls","unitPrice":0,"type":"labor"}],"notes":"Caveats, allowances, exclusions, assumptions","warnings":["Flags for the contractor"]}
+
+UNIT ABBREVIATIONS: ls=lump sum, sf=square feet, lf=linear feet, ea=each, hr=hour, day=day, ton=ton, cy=cubic yard
+
+ESTIMATING RULES:
+1. Always include a permit allowance if permits are likely required
+2. Always include debris removal / dumpster for remodels
+3. Separate labor and materials into distinct line items when possible
+4. Use realistic mid-market pricing for the user's region — not low-ball, not premium
+5. Add General Conditions / Project Management for jobs over $5,000
+6. Include waste factors: flooring +10%, tile +15%, drywall +10%, lumber +8%
+7. If user provided labor rates, use those exactly — they override your defaults
+8. Flag anything needing field verification with "(allowance)" in description
+9. Sequence items in construction order: demo → framing → rough-ins → insulation → drywall → finishes → paint → trim → fixtures
+10. For unknown quantities, state assumptions clearly in notes
+
+SCOPE WRITING RULES:
+- Professional clear third-person language
+- Describe what IS and IS NOT included
+- Suitable for a legally binding contract
+- Under 150 words
+
+Always apply the user's rates and custom instructions first.`.trim();
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20, color = "currentColor" }) => (
@@ -69,16 +98,17 @@ const fmtDate = d => d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", {
 const STORAGE_KEY = "crm_v3";
 
 const defaultData = () => ({
-  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "" },
+  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "" },
   theme: { preset: "Bold Blue", custom: { ...THEMES["Bold Blue"] } },
   customers: [], jobs: [], estimates: [], invoices: [],
+  credentials: { docs: [] },
+  qboConfig: { clientId: "", realmId: "", accessToken: "" },
+  openSignConfig: { apiKey: "", proxyUrl: "" },
+  aiConfig: { apiKey: "", model: "claude-sonnet-4-5", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
 const loadData = () => { try { return { ...defaultData(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch { return defaultData(); } };
-const saveData = (d, uid) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {}
-  if (uid) saveToFirestore(uid, d).catch(console.error);
-};
+const saveData = d => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} };
 
 // ─── THEME CONTEXT ────────────────────────────────────────────────────────────
 const getTheme = (themeData) => {
@@ -271,12 +301,14 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   </div>
   ${inv.openSignUrl ? `<div class="sign-box no-print"><div style="font-size:18px;font-weight:700;color:#6d28d9">✍️ Sign This Contract Online</div><div style="color:#6b7280;margin-top:6px;font-size:13px">Click below to sign electronically via OpenSign™</div><a href="${inv.openSignUrl}" target="_blank" class="sign-btn">Sign Contract Now</a></div>` : ""}
   ${inv.status !== "paid" && venmoHandle ? `<div class="venmo-box no-print"><div style="font-size:18px;font-weight:700;color:#1d4ed8">💙 Pay via Venmo</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Send to <strong>${venmoHandle}</strong></div><a href="https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number)}&amount=${total.toFixed(2)}" target="_blank" class="venmo-btn">Pay ${fmt$(total)} via Venmo</a></div>` : ""}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">${co.name || "Your Company"} · CCB # ${co.ccbNumber || "__________"} · ${fmtDate(today())}</div>
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">${co.name || "Your Company"} · CCB # ${co.ccbNumber || "__________"} · ${fmtDate(today())}
+  ${co.netlifyUrl ? `<div style="margin-top:8px"><a href="${co.netlifyUrl}/credentials" target="_blank" style="color:#1d4ed8;font-size:11px;font-weight:600">🛡️ View License & Insurance Credentials</a></div>` : ""}
+  </div>
   </div></body></html>`;
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ data, t }) {
+function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
   const paid = data.invoices.filter(i => i.status === "paid").reduce((s, i) => s + (i.total || 0), 0);
   const outstanding = data.invoices.filter(i => i.status !== "paid").reduce((s, i) => s + (i.total || 0), 0);
   const activeJobs = data.jobs.filter(j => j.status === "active").length;
@@ -285,47 +317,63 @@ function Dashboard({ data, t }) {
   const statusCounts = {};
   STATUSES.forEach(s => { statusCounts[s.key] = data.jobs.filter(j => j.status === s.key).length; });
 
+  const goInvoices = (filter) => { setInvoiceFilter(filter); setTab("invoices"); };
+  const goJobs = (filter) => { setJobFilter(filter); setTab("jobs"); };
+
+  const statCards = [
+    { label: "Collected",    value: fmt$(paid),        color: "#4ade80", sub: "Tap to view paid invoices",       onClick: () => goInvoices("paid") },
+    { label: "Outstanding",  value: fmt$(outstanding), color: "#f97316", sub: "Tap to view unpaid invoices",     onClick: () => goInvoices("unpaid") },
+    { label: "Active Jobs",  value: activeJobs,        color: t.accent,  sub: "Tap to view in-progress jobs",   onClick: () => goJobs("active") },
+    { label: "Awaiting Sig", value: unsigned,          color: "#a78bfa", sub: "Tap to view unsigned invoices",  onClick: () => goInvoices("unsigned") },
+  ];
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: "0 0 4px" }}>Dashboard</h2>
         <div style={{ color: t.subtext, fontSize: 13 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>
       </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-        {[
-          { label: "Collected", value: fmt$(paid), color: "#4ade80" },
-          { label: "Outstanding", value: fmt$(outstanding), color: "#f97316" },
-          { label: "Active Jobs", value: activeJobs, color: t.accent },
-          { label: "Awaiting Sig", value: unsigned, color: "#a78bfa" },
-        ].map(s => (
-          <Card key={s.label} t={t} style={{ padding: 16 }}>
+        {statCards.map(s => (
+          <button key={s.label} onClick={s.onClick}
+            style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, textAlign: "left", cursor: "pointer", fontFamily: "inherit", transition: "border-color 0.15s", borderColor: t.border }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = s.color}
+            onMouseLeave={e => e.currentTarget.style.borderColor = t.border}>
             <div style={{ color: s.color, fontSize: 26, fontWeight: 800 }}>{s.value}</div>
-            <div style={{ color: t.subtext, fontSize: 11, marginTop: 4 }}>{s.label}</div>
-          </Card>
+            <div style={{ color: t.text, fontSize: 12, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
+            <div style={{ color: t.subtext, fontSize: 10, marginTop: 2 }}>{s.sub}</div>
+          </button>
         ))}
       </div>
+
       <Card t={t} style={{ marginBottom: 16 }}>
-        <SectionLabel t={t}>Pipeline</SectionLabel>
+        <SectionLabel t={t}>Pipeline — Tap any stage to filter jobs</SectionLabel>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {STATUSES.map(s => (
-            <div key={s.key} style={{ background: s.bg, border: `1px solid ${s.color}44`, borderRadius: 8, padding: "8px 10px", textAlign: "center", flex: "1 1 60px" }}>
+            <button key={s.key} onClick={() => goJobs(s.key)}
+              style={{ background: s.bg, border: `1px solid ${s.color}44`, borderRadius: 8, padding: "8px 10px", textAlign: "center", flex: "1 1 60px", cursor: "pointer", fontFamily: "inherit" }}>
               <div style={{ color: s.color, fontSize: 20, fontWeight: 800 }}>{statusCounts[s.key] || 0}</div>
               <div style={{ color: "#64748b", fontSize: 10 }}>{s.label}</div>
-            </div>
+            </button>
           ))}
         </div>
       </Card>
+
       <Card t={t}>
-        <SectionLabel t={t}>Recent Jobs</SectionLabel>
-        {recentJobs.length === 0 ? <div style={{ color: t.muted, textAlign: "center", padding: 20 }}>No jobs yet</div> : recentJobs.map(job => (
-          <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${t.border}` }}>
-            <div>
-              <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{job.title}</div>
-              <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName}</div>
-            </div>
-            <Badge status={job.status} />
-          </div>
-        ))}
+        <SectionLabel t={t}>Recent Jobs — Tap to view</SectionLabel>
+        {recentJobs.length === 0
+          ? <div style={{ color: t.muted, textAlign: "center", padding: 20 }}>No jobs yet</div>
+          : recentJobs.map(job => (
+            <button key={job.id} onClick={() => goJobs("all")}
+              style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${t.border}`, background: "none", border: "none", borderBottom: `1px solid ${t.border}`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+              <div>
+                <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{job.title}</div>
+                <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName}</div>
+              </div>
+              <Badge status={job.status} />
+            </button>
+          ))}
       </Card>
     </div>
   );
@@ -395,11 +443,11 @@ function Customers({ data, setData, t }) {
 }
 
 // ─── JOBS ─────────────────────────────────────────────────────────────────────
-function Jobs({ data, setData, t }) {
+function Jobs({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ title: "", customerId: "", customerName: "", address: "", status: "lead", date: today(), value: "", notes: "", checklist: [] });
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(initialFilter || "all");
   const [newItem, setNewItem] = useState("");
 
   const open = j => { setSelected(j); setForm(j ? { ...j, checklist: j.checklist || [] } : { title: "", customerId: "", customerName: "", address: "", status: "lead", date: today(), value: "", notes: "", checklist: [] }); setView("form"); };
@@ -520,6 +568,268 @@ function Jobs({ data, setData, t }) {
   );
 }
 
+// ─── AI SETTINGS COMPONENT ───────────────────────────────────────────────────
+function AISettings({ data, setData, t }) {
+  const [ai, setAi] = useState(() => data.aiConfig || {});
+  const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [showKey, setShowKey] = useState(false);
+
+  const save = () => { setData(d => ({ ...d, aiConfig: ai })); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  const testConnection = async () => {
+    if (!ai.apiKey) { setTestResult({ ok: false, msg: "Enter your API key first." }); return; }
+    setTesting(true); setTestResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": ai.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: ai.model || "claude-sonnet-4-5", max_tokens: 30, messages: [{ role: "user", content: "Reply only: API_OK" }] })
+      });
+      const d = await res.json();
+      if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
+      else setTestResult({ ok: true, msg: "✅ Connected! API key is working." });
+    } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
+    setTesting(false);
+  };
+
+  const trades = [["general","General Labor"],["carpenter","Carpenter"],["electrician","Electrician"],["plumber","Plumber"],["tile","Tile Setter"],["painter","Painter"],["concrete","Concrete"],["hvac","HVAC Tech"],["drywall","Drywall"],["roofing","Roofer"]];
+
+  return (
+    <div>
+      <div style={{ background: `linear-gradient(135deg,${t.accent}22,${t.accent}08)`, border: `1px solid ${t.accent}44`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <span style={{ fontSize: 22 }}>🤖</span>
+          <div><div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>AI Estimator</div><div style={{ color: t.subtext, fontSize: 11 }}>Choose your AI provider below</div></div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>API Key <span style={{ color: "#ef4444" }}>*</span></label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type={showKey ? "text" : "password"} value={ai.apiKey || ""} onChange={e => setAi(a => ({ ...a, apiKey: e.target.value }))} placeholder="sk-ant-api03-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+            <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+          </div>
+          <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get free key at <a href="https://console.anthropic.com" target="_blank" style={{ color: t.accent }}>console.anthropic.com</a> → API Keys. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
+          <select value={ai.model || "claude-sonnet-4-5"} onChange={e => setAi(a => ({ ...a, model: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="claude-sonnet-4-5">Claude Sonnet 4.5 — Fast & affordable ★ Recommended</option>
+            <option value="claude-opus-4-5">Claude Opus 4.5 — Most powerful, slower & costlier</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest, lowest cost</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={testConnection} disabled={testing} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "9px 16px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer" }}>{testing ? "Testing..." : "Test Connection"}</button>
+          {testResult && <span style={{ color: testResult.ok ? "#4ade80" : "#f87171", fontSize: 12 }}>{testResult.msg}</span>}
+        </div>
+      </div>
+
+      <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>Your Market & Labor Rates ($/hr)</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          <div><label style={{ display: "block", color: t.subtext, fontSize: 11, marginBottom: 4 }}>Region / City</label><input value={ai.region || ""} onChange={e => setAi(a => ({ ...a, region: e.target.value }))} placeholder="e.g. Portland, OR" style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} /></div>
+          <div><label style={{ display: "block", color: t.subtext, fontSize: 11, marginBottom: 4 }}>Default Markup %</label><input type="number" value={ai.markup || "20"} onChange={e => setAi(a => ({ ...a, markup: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} /></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {trades.map(([key, label]) => (
+            <div key={key}>
+              <label style={{ display: "block", color: t.subtext, fontSize: 10, marginBottom: 3 }}>{label}</label>
+              <input type="number" value={ai.laborRates?.[key] || ""} onChange={e => setAi(a => ({ ...a, laborRates: { ...a.laborRates, [key]: e.target.value } }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, fontWeight: 700 }}>Custom AI Instructions</div>
+        <div style={{ color: t.subtext, fontSize: 11, marginBottom: 8, lineHeight: 1.6 }}>Tell the AI your preferences. E.g. "Always add 15% contingency on bath remodels." or "Never include electrical — I sub that out."</div>
+        <textarea value={ai.customInstructions || ""} onChange={e => setAi(a => ({ ...a, customInstructions: e.target.value }))} rows={4} placeholder="Enter your personal estimating rules..." style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+      </div>
+
+      <button onClick={save} style={{ width: "100%", background: saved ? "linear-gradient(135deg,#059669,#047857)" : `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+        {saved ? "✅ AI Settings Saved!" : "Save AI Settings"}
+      </button>
+    </div>
+  );
+}
+
+// ─── AI ESTIMATE PANEL ────────────────────────────────────────────────────────
+function AIEstimatePanel({ aiConfig, onApply, t }) {
+  const [open, setOpen] = useState(false);
+  const [jobDesc, setJobDesc] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [phase, setPhase] = useState("idle");
+
+  const provider = aiConfig?.provider || "claude";
+  const hasKey = provider === "openai" ? aiConfig?.openaiKey?.startsWith("sk-") : aiConfig?.apiKey?.startsWith("sk-ant");
+
+  const generate = async () => {
+    if (!jobDesc.trim()) return;
+    if (!hasKey) { setError(`Add your ${provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings → AI Estimator first.`); return; }
+    setLoading(true); setPhase("generating"); setResult(null); setError(null);
+    const rates = aiConfig?.laborRates || {};
+    const rateStr = Object.entries(rates).map(([k, v]) => `${k}: $${v}/hr`).join(", ");
+    const userMsg = `MARKET: ${aiConfig?.region || "Not specified"}\nMARKUP: ${aiConfig?.markup || 20}%\nLABOR RATES: ${rateStr}\nCUSTOM INSTRUCTIONS: ${aiConfig?.customInstructions || "None"}\n\nJOB:\n${jobDesc}\n\nReturn ONLY the JSON object.`;
+    try {
+      let text = "";
+      if (provider === "openai") {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${aiConfig.openaiKey}` },
+          body: JSON.stringify({ model: aiConfig.openaiModel || "gpt-4o-mini", max_tokens: 4096, messages: [{ role: "system", content: CONTRACTOR_SYSTEM_PROMPT }, { role: "user", content: userMsg }] })
+        });
+        const d = await res.json();
+        if (d.error) throw new Error(d.error.message);
+        text = d.choices?.[0]?.message?.content || "";
+      } else {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": aiConfig.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: aiConfig.model || "claude-sonnet-4-5", max_tokens: 4096, system: CONTRACTOR_SYSTEM_PROMPT, messages: [{ role: "user", content: userMsg }] })
+        });
+        const d = await res.json();
+        if (d.error) throw new Error(d.error.message);
+        text = d.content?.[0]?.text || "";
+      }
+      const clean = text.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
+      const parsed = JSON.parse(clean);
+      setResult(parsed); setPhase("done");
+    } catch(e) {
+      setError(e.message.includes("JSON") ? "Unexpected response — try rephrasing your description." : e.message);
+      setPhase("error");
+    }
+    setLoading(false);
+  };
+
+  const applyEstimate = () => {
+    if (!result) return;
+    const lines = (result.lines || []).map(l => ({ id: Math.random().toString(36).slice(2), description: l.description || "", qty: Number(l.qty) || 1, unit: l.unit || "ls", unitPrice: Number(l.unitPrice) || 0, type: l.type || "labor" }));
+    onApply({ lines, scopeSummary: result.scopeSummary || "", notes: result.notes || "" });
+    setOpen(false); setPhase("idle"); setJobDesc(""); setResult(null);
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 10, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14 }}>
+      <span style={{ fontSize: 16 }}>✨</span> AI Generate Estimate
+      {!hasKey && <span style={{ background: "#fbbf24", color: "#000", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 800 }}>API KEY NEEDED</span>}
+    </button>
+  );
+
+  return (
+    <div style={{ background: "#130520", border: "2px solid #7c3aed", borderRadius: 14, padding: 18, marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 18 }}>✨</span>
+          <div><div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>AI Estimate Generator</div><div style={{ color: "#a78bfa", fontSize: 10 }}>{provider === "openai" ? "🟢 ChatGPT" : "🟣 Claude"} · {aiConfig?.region || "Your market"}</div></div>
+        </div>
+        <button onClick={() => { setOpen(false); setPhase("idle"); setResult(null); setError(null); }} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
+      </div>
+
+      {(phase === "idle" || phase === "error") && (
+        <>
+          <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>Describe the job — the more detail the better:</div>
+          <textarea value={jobDesc} onChange={e => setJobDesc(e.target.value)} rows={5} placeholder={"Examples:\n\"750 sq ft master bath gut remodel — demo tile, 24x24 porcelain floors, tile shower, double vanity, toilet, paint\"\n\n\"Replace 200 lf cedar fence, 6ft dog-ear, remove old, new concrete footings\""} style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 10, padding: "12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.6 }} />
+          {error && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "#450a0a", borderRadius: 8 }}>⚠️ {error}</div>}
+          <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+            <button onClick={generate} disabled={!jobDesc.trim()} style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: !jobDesc.trim() ? "not-allowed" : "pointer", opacity: !jobDesc.trim() ? 0.5 : 1 }}>Generate Estimate →</button>
+          </div>
+        </>
+      )}
+
+      {phase === "generating" && (
+        <div style={{ textAlign: "center", padding: "28px 0" }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>⚙️</div>
+          <div style={{ color: "#a78bfa", fontSize: 14, fontWeight: 600 }}>Claude is building your estimate...</div>
+          <div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>Analyzing scope and pricing line items</div>
+        </div>
+      )}
+
+      {phase === "done" && result && (
+        <>
+          {result.scopeSummary && <div style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 12, marginBottom: 12 }}><div style={{ color: "#4ade80", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Scope Summary</div><div style={{ color: "#d1fae5", fontSize: 12, lineHeight: 1.7 }}>{result.scopeSummary}</div></div>}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Line Items ({result.lines?.length || 0})</div>
+            <div style={{ maxHeight: 260, overflowY: "auto" }}>
+              {(result.lines || []).map((l, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "7px 10px", background: "#0d1520", borderRadius: 7, marginBottom: 3, gap: 8 }}>
+                  <div style={{ flex: 1 }}><div style={{ color: "#e2e8f0", fontSize: 12 }}>{l.description}</div><div style={{ color: "#64748b", fontSize: 10, marginTop: 1 }}>{l.qty} {l.unit} · <span style={{ color: l.type === "labor" ? "#60a5fa" : l.type === "material" ? "#f59e0b" : "#a78bfa" }}>{l.type}</span></div></div>
+                  <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>${(Number(l.qty)*Number(l.unitPrice)).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 10px 0", borderTop: "1px solid #1e2d40", marginTop: 6 }}>
+              <span style={{ color: "#94a3b8", fontSize: 13 }}>Estimated Total</span>
+              <span style={{ color: "#4ade80", fontSize: 18, fontWeight: 800 }}>${(result.lines||[]).reduce((s,l)=>s+Number(l.qty)*Number(l.unitPrice),0).toLocaleString()}</span>
+            </div>
+          </div>
+          {result.warnings?.length > 0 && <div style={{ background: "#451a03", border: "1px solid #f59e0b", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#fcd34d", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>⚠️ REVIEW BEFORE SENDING</div>{result.warnings.map((w,i) => <div key={i} style={{ color: "#fde68a", fontSize: 11, marginBottom: 2 }}>• {w}</div>)}</div>}
+          {result.notes && <div style={{ background: "#0f172a", border: "1px solid #1e2d40", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#64748b", fontSize: 10, fontWeight: 700, marginBottom: 3 }}>ASSUMPTIONS & EXCLUSIONS</div><div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6 }}>{result.notes}</div></div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={applyEstimate} style={{ flex: 1, background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✅ Apply to Estimate</button>
+            <button onClick={() => { setPhase("idle"); setResult(null); }} style={{ background: "#1e2d40", border: "1px solid #334155", borderRadius: 8, padding: "12px 14px", color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>↺ Redo</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── AI SCOPE WRITER ──────────────────────────────────────────────────────────
+function AIScopeWriter({ aiConfig, lines, jobTitle, onApply, t }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const provider = aiConfig?.provider || "claude";
+  const hasKey = provider === "openai" ? aiConfig?.openaiKey?.startsWith("sk-") : aiConfig?.apiKey?.startsWith("sk-ant");
+  const scopeSystem = "You are an expert construction contract writer. Write professional scope of work language. Clear, specific, third-person present tense. Include what IS and IS NOT included. No bullet points — flowing professional prose suitable for a legal contract. Under 150 words.";
+
+  const generateScope = async () => {
+    if (!hasKey) { setError(`Add ${provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings → AI Estimator.`); return; }
+    setLoading(true); setError(null);
+    const linesSummary = (lines || []).filter(l => l.description).map(l => `- ${l.description}: ${l.qty} ${l.unit} @ $${l.unitPrice}`).join("\n");
+    const userContent = `Write scope of work for:\nJob: ${jobTitle || "Remodeling Project"}\nMarket: ${aiConfig?.region || "US"}\nInstructions: ${aiConfig?.customInstructions || "None"}\nLine Items:\n${linesSummary || "General remodeling work"}`;
+    try {
+      let text = "";
+      if (provider === "openai") {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${aiConfig.openaiKey}` },
+          body: JSON.stringify({ model: aiConfig.openaiModel || "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: scopeSystem }, { role: "user", content: userContent }] })
+        });
+        const d = await res.json();
+        if (d.error) throw new Error(d.error.message);
+        text = d.choices?.[0]?.message?.content || "";
+      } else {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": aiConfig.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: aiConfig.model || "claude-sonnet-4-5", max_tokens: 600, system: scopeSystem, messages: [{ role: "user", content: userContent }] })
+        });
+        const d = await res.json();
+        if (d.error) throw new Error(d.error.message);
+        text = d.content?.[0]?.text || "";
+      }
+      onApply(text);
+    } catch(e) { setError(e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <label style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>Notes / Scope of Work</label>
+        <button onClick={generateScope} disabled={loading} title={!hasKey ? `Add ${provider === "openai" ? "OpenAI" : "Anthropic"} key in Settings` : "Generate professional scope with AI"}
+          style={{ background: loading ? t.muted : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          {loading ? "Writing..." : <><span style={{ fontSize: 12 }}>✨</span> AI Write Scope</>}
+        </button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 4 }}>⚠️ {error}</div>}
+    </div>
+  );
+}
+
 // ─── ESTIMATES ────────────────────────────────────────────────────────────────
 function Estimates({ data, setData, t }) {
   const [view, setView] = useState("list");
@@ -543,7 +853,7 @@ function Estimates({ data, setData, t }) {
     setView("list");
   };
   const convert = est => {
-    const inv = { id: uid(), number: `INV-${String(data.invoices.length + 1).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: [] };
+    const inv = { id: uid(), number: `INV-${String(data.invoices.length + 1).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", openSignDocId: "", openSignSentTo: "", openSignSentAt: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: [] };
     setData(d => ({ ...d, invoices: [...d.invoices, inv], estimates: d.estimates.map(e => e.id === est.id ? { ...e, status: "approved" } : e) }));
     alert(`Invoice ${inv.number} created!`);
   };
@@ -555,6 +865,11 @@ function Estimates({ data, setData, t }) {
         <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? form.number : "New Estimate"}</h2>
       </div>
+      <AIEstimatePanel
+        aiConfig={data.aiConfig}
+        onApply={({ lines, scopeSummary, notes }) => setForm(f => ({ ...f, lines: lines.length > 0 ? lines : f.lines, jobTitle: f.jobTitle || scopeSummary.slice(0,60), notes: notes || f.notes }))}
+        t={t}
+      />
       <Card t={t} style={{ marginBottom: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Sel t={t} label="Customer" value={form.customerId} onChange={v => { const c = data.customers.find(x => x.id === v); setForm(f => ({ ...f, customerId: v, customerName: c?.name || "" })); }} options={[{ value: "", label: "— Select —" }, ...data.customers.map(c => ({ value: c.id, label: c.name }))]} />
@@ -594,7 +909,11 @@ function Estimates({ data, setData, t }) {
           <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 18, fontWeight: 800, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}><span>Total</span><span style={{ color: "#4ade80" }}>{fmt$(total(form))}</span></div>
         </div>
       </Card>
-      <Card t={t} style={{ marginBottom: 16 }}><Inp t={t} label="Notes / Scope" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} rows={4} placeholder="Scope details, exclusions..." /></Card>
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <AIScopeWriter aiConfig={data.aiConfig} lines={form.lines} jobTitle={form.jobTitle} onApply={scope => setForm(f => ({ ...f, notes: scope }))} t={t} />
+        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={4} placeholder="Scope details, exclusions, terms..."
+          style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+      </Card>
       <div style={{ display: "flex", gap: 10 }}><Btn t={t} onClick={save}><Icon d={IC.check} size={14} /> Save</Btn><Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn></div>
     </div>
   );
@@ -623,8 +942,895 @@ function Estimates({ data, setData, t }) {
   );
 }
 
+// ─── CREDENTIALS MANAGER (paste before Settings function) ─────────────────────
+
+function CredentialsManager({ data, setData, t }) {
+  const [uploading, setUploading] = useState(null);
+  const [expandDoc, setExpandDoc] = useState(null);
+
+  const creds = data.credentials || { docs: [] };
+
+  const DOC_TYPES = [
+    { key: "coi",     label: "Certificate of Insurance", icon: "🛡️", required: true },
+    { key: "license", label: "CCB Contractor License",   icon: "📋", required: true },
+    { key: "bond",    label: "Surety Bond",               icon: "🔒", required: false },
+    { key: "workers", label: "Workers Comp Certificate",  icon: "👷", required: false },
+    { key: "other",   label: "Other Document",            icon: "📄", required: false },
+  ];
+
+  const getDaysUntilExpiry = (dateStr) => {
+    if (!dateStr) return null;
+    const diff = new Date(dateStr + "T00:00:00") - new Date();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const expiryStatus = (dateStr) => {
+    const days = getDaysUntilExpiry(dateStr);
+    if (days === null) return null;
+    if (days < 0)   return { color: "#ef4444", bg: "#450a0a", label: "EXPIRED",          icon: "❌" };
+    if (days <= 30) return { color: "#f59e0b", bg: "#451a03", label: `Expires in ${days}d`, icon: "⚠️" };
+    if (days <= 90) return { color: "#fbbf24", bg: "#422006", label: `Expires in ${days}d`, icon: "⏰" };
+    return           { color: "#4ade80", bg: "#052e16", label: `Valid — ${days}d left`,   icon: "✅" };
+  };
+
+  const handleUpload = (docType, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(docType);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const existing = (creds.docs || []).find(d => d.type === docType);
+      const newDoc = {
+        id:       existing?.id || Math.random().toString(36).slice(2),
+        type:     docType,
+        label:    DOC_TYPES.find(d => d.key === docType)?.label || docType,
+        fileName: file.name,
+        mimeType: file.type,
+        dataUrl:  ev.target.result,
+        uploadedAt: new Date().toISOString().split("T")[0],
+        expiresAt:  existing?.expiresAt || "",
+        notes:      existing?.notes || "",
+      };
+      const filtered = (creds.docs || []).filter(d => d.type !== docType);
+      setData(d => ({ ...d, credentials: { ...creds, docs: [...filtered, newDoc] } }));
+      setUploading(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeDoc = (docId) => {
+    if (!window.confirm("Remove this document?")) return;
+    setData(d => ({ ...d, credentials: { ...creds, docs: (creds.docs || []).filter(x => x.id !== docId) } }));
+  };
+
+  const updateDoc = (docId, patch) => {
+    setData(d => ({
+      ...d,
+      credentials: {
+        ...creds,
+        docs: (creds.docs || []).map(x => x.id === docId ? { ...x, ...patch } : x)
+      }
+    }));
+  };
+
+  const openDoc = (doc) => {
+    const win = window.open("", "_blank");
+    if (doc.mimeType === "application/pdf") {
+      win.document.write(`<html><body style="margin:0"><embed src="${doc.dataUrl}" type="application/pdf" width="100%" height="100%"/></body></html>`);
+    } else {
+      win.document.write(`<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${doc.dataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);
+    }
+  };
+
+  // Generate shareable credential page HTML
+  const generateCredentialPage = () => {
+    const co = data.company || {};
+    const validDocs = (creds.docs || []).filter(d => d.dataUrl);
+    const docCards = validDocs.map(doc => {
+      const status = expiryStatus(doc.expiresAt);
+      const isImage = doc.mimeType?.startsWith("image/");
+      return `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:16px">
+          ${isImage ? `<img src="${doc.dataUrl}" style="width:100%;max-height:300px;object-fit:contain;background:#f9fafb;padding:12px;box-sizing:border-box"/>` : `<div style="background:#f3f4f6;padding:20px;text-align:center"><a href="${doc.dataUrl}" target="_blank" style="background:#1d4ed8;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700">📄 View / Download PDF</a></div>`}
+          <div style="padding:14px">
+            <div style="font-size:15px;font-weight:700;color:#111827">${doc.label}</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px">Uploaded: ${doc.uploadedAt}</div>
+            ${doc.expiresAt && status ? `<div style="margin-top:8px;background:${status.bg};border:1px solid ${status.color};border-radius:20px;padding:3px 10px;display:inline-block;font-size:11px;font-weight:700;color:${status.color}">${status.icon} ${status.label}</div>` : ""}
+            ${doc.notes ? `<div style="margin-top:8px;font-size:12px;color:#6b7280">${doc.notes}</div>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${co.name || "Contractor"} — Credentials</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;background:#f8fafc;color:#111827;padding:20px}
+    .header{background:linear-gradient(135deg,#1d4ed8,#1e40af);color:#fff;border-radius:16px;padding:28px;margin-bottom:24px;text-align:center}
+    .badge{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:4px 12px;font-size:12px;display:inline-block;margin-top:8px}
+    </style></head><body>
+    <div style="max-width:600px;margin:0 auto">
+      <div class="header">
+        <div style="font-size:28px;font-weight:800">${co.name || "Your Contractor"}</div>
+        ${co.ccbNumber ? `<div class="badge">CCB License #${co.ccbNumber}</div>` : ""}
+        <div style="margin-top:12px;font-size:13px;opacity:0.85">${[co.phone, co.email].filter(Boolean).join(" · ")}</div>
+      </div>
+      ${validDocs.length === 0 ? '<div style="text-align:center;padding:40px;color:#6b7280">No credentials uploaded yet.</div>' : docCards}
+      <div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:24px">Generated by Contractor CRM · ${new Date().toLocaleDateString()}</div>
+    </div></body></html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(co.name || "contractor").replace(/\s+/g,"-").toLowerCase()}-credentials.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      {/* Header + share button */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Insurance & License Docs</div>
+          <div style={{ color: t.subtext, fontSize: 11, marginTop: 2 }}>Stored locally · Shown on invoices · Shareable link</div>
+        </div>
+        <button onClick={generateCredentialPage} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          🔗 Download Credential Page
+        </button>
+      </div>
+
+      {/* Expiry alerts */}
+      {(creds.docs || []).filter(d => {
+        const days = getDaysUntilExpiry(d.expiresAt);
+        return days !== null && days <= 30;
+      }).map(doc => {
+        const st = expiryStatus(doc.expiresAt);
+        return (
+          <div key={doc.id} style={{ background: st.bg, border: `1px solid ${st.color}`, borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>{st.icon}</span>
+            <div>
+              <div style={{ color: st.color, fontSize: 13, fontWeight: 700 }}>{doc.label} — {st.label}</div>
+              <div style={{ color: t.subtext, fontSize: 11 }}>Update this document soon to stay compliant</div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Doc slots */}
+      {DOC_TYPES.map(docType => {
+        const uploaded = (creds.docs || []).find(d => d.type === docType.key);
+        const status = uploaded ? expiryStatus(uploaded.expiresAt) : null;
+        const isExpanded = expandDoc === docType.key;
+
+        return (
+          <div key={docType.key} style={{ background: t.surface, border: `1px solid ${uploaded ? (status?.color + "44" || t.border) : t.border}`, borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
+            {/* Doc header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{docType.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{docType.label}</span>
+                  {docType.required && <span style={{ background: t.muted, color: t.subtext, borderRadius: 20, padding: "1px 7px", fontSize: 10 }}>Required</span>}
+                </div>
+                {uploaded ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                    <span style={{ color: t.subtext, fontSize: 11 }}>{uploaded.fileName}</span>
+                    {status && <span style={{ background: status.bg, color: status.color, borderRadius: 20, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>{status.icon} {status.label}</span>}
+                  </div>
+                ) : (
+                  <div style={{ color: t.muted, fontSize: 11, marginTop: 2 }}>Not uploaded</div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {uploaded && (
+                  <>
+                    <button onClick={() => openDoc(uploaded)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", color: t.accent, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>View</button>
+                    <button onClick={() => setExpandDoc(isExpanded ? null : docType.key)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", color: t.subtext, fontSize: 11, cursor: "pointer" }}>{isExpanded ? "▲" : "▼"}</button>
+                  </>
+                )}
+                <label style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  {uploading === docType.key ? "..." : uploaded ? "Replace" : "Upload"}
+                  <input type="file" accept=".pdf,image/*" onChange={e => handleUpload(docType.key, e)} style={{ display: "none" }} />
+                </label>
+              </div>
+            </div>
+
+            {/* Expanded details */}
+            {uploaded && isExpanded && (
+              <div style={{ borderTop: `1px solid ${t.border}`, padding: "14px 16px", background: t.surface2 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Expiration Date</label>
+                    <input type="date" value={uploaded.expiresAt || ""} onChange={e => updateDoc(uploaded.id, { expiresAt: e.target.value })}
+                      style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "7px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Uploaded On</label>
+                    <div style={{ color: t.text, fontSize: 13, padding: "7px 0" }}>{uploaded.uploadedAt}</div>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Notes (policy #, agent, etc.)</label>
+                  <input value={uploaded.notes || ""} onChange={e => updateDoc(uploaded.id, { notes: e.target.value })} placeholder="e.g. Policy #ABC-123456 · Agent: John Smith"
+                    style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "7px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <button onClick={() => removeDoc(uploaded.id)} style={{ marginTop: 10, background: "none", border: "1px solid #ef4444", borderRadius: 6, padding: "5px 12px", color: "#ef4444", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Remove Document</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div style={{ color: t.subtext, fontSize: 11, marginTop: 8, lineHeight: 1.7 }}>
+        💡 <strong style={{ color: t.text }}>How customers view your credentials:</strong>
+        <ol style={{ marginTop: 6, paddingLeft: 16, lineHeight: 1.9 }}>
+          <li>Download the credential page HTML file above</li>
+          <li>In Netlify → drag the file into your site's <code style={{ background: t.surface, padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>public</code> folder and name it <code style={{ background: t.surface, padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>credentials.html</code></li>
+          <li>Add your Netlify URL in Settings → Company Info</li>
+          <li>Customers see a "🛡️ View Credentials" link at the bottom of every invoice — nothing is shown until they click it</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── ACCOUNTING EXPORTS (paste before Invoices function) ──────────────────────
+
+function AccountingExports({ data, t }) {
+  const [dateFrom, setDateFrom]     = useState("");
+  const [dateTo, setDateTo]         = useState("");
+  const [exporting, setExporting]   = useState(null);
+  const [qboConfig, setQboConfig]   = useState(data.qboConfig || { clientId: "", realmId: "", accessToken: "" });
+  const [showQBO, setShowQBO]       = useState(false);
+  const [qboStatus, setQboStatus]   = useState(null);
+
+  const co = data.company || {};
+
+  const filteredInvoices = data.invoices.filter(inv => {
+    if (dateFrom && inv.date < dateFrom) return false;
+    if (dateTo   && inv.date > dateTo)   return false;
+    return true;
+  });
+
+  // ── CSV Export ──────────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    setExporting("csv");
+    const headers = ["Invoice #","Date","Due Date","Customer","Job Title","Status","Line Description","Type","Qty","Unit","Unit Price","Line Total","Subtotal","Tax Rate","Tax Amount","Invoice Total"];
+    const rows = [];
+
+    filteredInvoices.forEach(inv => {
+      const sub  = (inv.lines||[]).reduce((s,l) => s + Number(l.qty)*Number(l.unitPrice), 0);
+      const tax  = sub * (Number(inv.taxRate||0)/100);
+      const tot  = sub + tax;
+      if ((inv.lines||[]).length === 0) {
+        rows.push([inv.number, inv.date, inv.dueDate||"", inv.customerName, inv.jobTitle||"", inv.status, "", "", "", "", "", "", sub.toFixed(2), inv.taxRate||0, tax.toFixed(2), tot.toFixed(2)]);
+      } else {
+        inv.lines.forEach((line, i) => {
+          const lineTotal = Number(line.qty)*Number(line.unitPrice);
+          rows.push([
+            inv.number, inv.date, inv.dueDate||"", inv.customerName, inv.jobTitle||"", inv.status,
+            line.description, line.type, line.qty, line.unit, line.unitPrice.toFixed(2), lineTotal.toFixed(2),
+            i === 0 ? sub.toFixed(2) : "",
+            i === 0 ? (inv.taxRate||0) : "",
+            i === 0 ? tax.toFixed(2) : "",
+            i === 0 ? tot.toFixed(2) : ""
+          ]);
+        });
+      }
+    });
+
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell||"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    download(`invoices-export-${today()}.csv`, csvContent, "text/csv");
+    setExporting(null);
+  };
+
+  // ── IIF Export (QuickBooks Desktop) ────────────────────────────────────────
+  const exportIIF = () => {
+    setExporting("iif");
+    let iif = `!TRNS\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO\n`;
+    iif    += `!SPL\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tMEMO\n`;
+    iif    += `!ENDTRNS\n`;
+
+    filteredInvoices.forEach(inv => {
+      const sub = (inv.lines||[]).reduce((s,l) => s + Number(l.qty)*Number(l.unitPrice), 0);
+      const tax = sub * (Number(inv.taxRate||0)/100);
+      const tot = sub + tax;
+      const dateStr = inv.date ? inv.date.replace(/-/g,"/") : today().replace(/-/g,"/");
+
+      iif += `TRNS\tINVOICE\t${dateStr}\tAccounts Receivable\t${inv.customerName}\t${tot.toFixed(2)}\t${inv.number}\t${inv.jobTitle||""}\n`;
+      (inv.lines||[]).forEach(line => {
+        const lineTotal = Number(line.qty)*Number(line.unitPrice);
+        const acct = line.type === "labor" ? "Labor Income" : line.type === "material" ? "Materials Income" : "Services Income";
+        iif += `SPL\tINVOICE\t${dateStr}\t${acct}\t${inv.customerName}\t-${lineTotal.toFixed(2)}\t${line.description}\n`;
+      });
+      if (tax > 0) iif += `SPL\tINVOICE\t${dateStr}\tSales Tax Payable\t${inv.customerName}\t-${tax.toFixed(2)}\tSales Tax\n`;
+      iif += `ENDTRNS\n`;
+    });
+
+    download(`invoices-qb-desktop-${today()}.iif`, iif, "text/plain");
+    setExporting(null);
+  };
+
+  // ── Single invoice CSV ──────────────────────────────────────────────────────
+  const exportSingleInvoiceCSV = (inv) => {
+    const sub = (inv.lines||[]).reduce((s,l) => s + Number(l.qty)*Number(l.unitPrice), 0);
+    const tax = sub * (Number(inv.taxRate||0)/100);
+    const tot = sub + tax;
+    const headers = ["Description","Type","Qty","Unit","Unit Price","Total"];
+    const rows = (inv.lines||[]).map(l => [l.description, l.type, l.qty, l.unit, l.unitPrice, (Number(l.qty)*Number(l.unitPrice)).toFixed(2)]);
+    rows.push(["","","","","Subtotal",sub.toFixed(2)]);
+    if (tax > 0) rows.push(["","","","",`Tax (${inv.taxRate}%)`,tax.toFixed(2)]);
+    rows.push(["","","","","TOTAL DUE",tot.toFixed(2)]);
+    const csv = [headers,...rows].map(r => r.map(c => `"${String(c||"")}"`).join(",")).join("\n");
+    download(`${inv.number}-${inv.customerName.replace(/\s+/g,"-")}.csv`, csv, "text/csv");
+  };
+
+  // ── QBO Push (simulated — requires OAuth setup) ────────────────────────────
+  const pushToQBO = async (inv) => {
+    if (!qboConfig.accessToken || !qboConfig.realmId) {
+      alert("Configure QuickBooks Online connection first — click 'Setup QBO' below.");
+      return;
+    }
+    setExporting(`qbo-${inv.id}`);
+    // In a full implementation this would call the QBO API
+    // For now we show the QBO invoice payload and instructions
+    const sub = (inv.lines||[]).reduce((s,l) => s + Number(l.qty)*Number(l.unitPrice), 0);
+    const tax = sub * (Number(inv.taxRate||0)/100);
+    const payload = {
+      DocNumber: inv.number,
+      TxnDate: inv.date,
+      CustomerRef: { name: inv.customerName },
+      Line: (inv.lines||[]).map((l,i) => ({
+        Id: String(i+1),
+        LineNum: i+1,
+        Description: l.description,
+        Amount: Number(l.qty)*Number(l.unitPrice),
+        DetailType: "SalesItemLineDetail",
+        SalesItemLineDetail: { Qty: Number(l.qty), UnitPrice: Number(l.unitPrice) }
+      })),
+      TxnTaxDetail: tax > 0 ? { TotalTax: tax } : undefined,
+    };
+    alert(`QBO Invoice Payload Ready:\n\n${JSON.stringify(payload, null, 2).slice(0, 500)}...\n\nFull OAuth integration requires a backend proxy. Export CSV for now and import into QBO, or use the QBO CSV import feature.`);
+    setExporting(null);
+  };
+
+  const download = (filename, content, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const totalRevenue = filteredInvoices.reduce((s, inv) => {
+    const sub = (inv.lines||[]).reduce((ss,l) => ss + Number(l.qty)*Number(l.unitPrice), 0);
+    return s + sub + sub*(Number(inv.taxRate||0)/100);
+  }, 0);
+
+  const paidRevenue = filteredInvoices.filter(i => i.status === "paid").reduce((s, inv) => {
+    const sub = (inv.lines||[]).reduce((ss,l) => ss + Number(l.qty)*Number(l.unitPrice), 0);
+    return s + sub + sub*(Number(inv.taxRate||0)/100);
+  }, 0);
+
+  return (
+    <div>
+      {/* Summary bar */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {[
+          { label: "Total Invoiced", value: fmt$(totalRevenue), color: t.accent },
+          { label: "Collected",      value: fmt$(paidRevenue),  color: "#4ade80" },
+          { label: "Outstanding",    value: fmt$(totalRevenue - paidRevenue), color: "#f97316" },
+        ].map(s => (
+          <div key={s.label} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ color: s.color, fontSize: 16, fontWeight: 800 }}>{s.value}</div>
+            <div style={{ color: t.subtext, fontSize: 10, marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Date filter */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <div>
+          <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>From Date</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        </div>
+        <div>
+          <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>To Date</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        </div>
+      </div>
+      <div style={{ color: t.subtext, fontSize: 12, marginBottom: 14 }}>{filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""} in range</div>
+
+      {/* Export buttons */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+        <button onClick={exportCSV} disabled={exporting === "csv" || filteredInvoices.length === 0}
+          style={{ background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 10, padding: "13px 18px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, opacity: filteredInvoices.length === 0 ? 0.5 : 1 }}>
+          <span style={{ fontSize: 18 }}>📊</span>
+          <div style={{ textAlign: "left" }}>
+            <div>Export CSV — All Platforms</div>
+            <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85 }}>QuickBooks, Wave, FreshBooks, Xero, Excel, Google Sheets</div>
+          </div>
+        </button>
+
+        <button onClick={exportIIF} disabled={exporting === "iif" || filteredInvoices.length === 0}
+          style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)", border: "none", borderRadius: 10, padding: "13px 18px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, opacity: filteredInvoices.length === 0 ? 0.5 : 1 }}>
+          <span style={{ fontSize: 18 }}>🖥️</span>
+          <div style={{ textAlign: "left" }}>
+            <div>Export IIF — QuickBooks Desktop</div>
+            <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85 }}>Direct import into QuickBooks Pro, Premier, Enterprise</div>
+          </div>
+        </button>
+
+        <button onClick={() => setShowQBO(s => !s)}
+          style={{ background: showQBO ? t.muted : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 10, padding: "13px 18px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 18 }}>⚡</span>
+          <div style={{ textAlign: "left" }}>
+            <div>QuickBooks Online — Direct Sync</div>
+            <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85 }}>{showQBO ? "Click to collapse" : "Configure API connection"}</div>
+          </div>
+        </button>
+      </div>
+
+      {/* QBO Setup Panel */}
+      {showQBO && (
+        <div style={{ background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ color: "#a78bfa", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>QuickBooks Online Setup</div>
+          <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
+            <strong style={{ color: t.text }}>How to get your QBO credentials:</strong><br/>
+            1. Go to <a href="https://developer.intuit.com" target="_blank" style={{ color: "#a78bfa" }}>developer.intuit.com</a> → Create App<br/>
+            2. Select "QuickBooks Online" → get your Client ID & Secret<br/>
+            3. Add OAuth redirect: <code style={{ background: t.surface, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>https://yourapp.netlify.app/qbo-callback</code><br/>
+            4. Complete OAuth flow to get your Access Token & Realm ID
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            {[["Realm ID (Company ID)", "realmId", "1234567890"],["Access Token", "accessToken", "eyJ..."]].map(([lbl, key, ph]) => (
+              <div key={key}>
+                <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{lbl}</label>
+                <input value={qboConfig[key] || ""} onChange={e => setQboConfig(c => ({ ...c, [key]: e.target.value }))} placeholder={ph}
+                  style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "7px 10px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+            <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>⚠️ Note on QBO Direct Sync</div>
+            <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.6 }}>Full OAuth requires a backend server to handle token refresh. For now, use <strong style={{ color: t.text }}>CSV Export</strong> and import into QBO (File → Utilities → Import → IIF Files). This covers 95% of use cases. A full backend sync is on the premium roadmap.</div>
+          </div>
+          <div style={{ color: "#4ade80", fontSize: 11, fontWeight: 600 }}>✅ CSV import into QBO works perfectly and takes under 2 minutes.</div>
+        </div>
+      )}
+
+      {/* Per-invoice exports */}
+      {filteredInvoices.length > 0 && (
+        <div>
+          <div style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>Per-Invoice Export</div>
+          {filteredInvoices.slice().reverse().map(inv => {
+            const sub = (inv.lines||[]).reduce((s,l) => s + Number(l.qty)*Number(l.unitPrice), 0);
+            const tot = sub + sub*(Number(inv.taxRate||0)/100);
+            return (
+              <div key={inv.id} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ color: t.accent, fontSize: 11, fontWeight: 700 }}>{inv.number}</div>
+                  <div style={{ color: t.text, fontSize: 13, fontWeight: 600 }}>{inv.customerName}</div>
+                  <div style={{ color: t.subtext, fontSize: 11 }}>{fmtDate(inv.date)} · {fmt$(tot)}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => exportSingleInvoiceCSV(inv)} style={{ background: "#059669", border: "none", borderRadius: 6, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>CSV</button>
+                  <button onClick={() => pushToQBO(inv)} disabled={exporting === `qbo-${inv.id}`} style={{ background: "#7c3aed", border: "none", borderRadius: 6, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>QBO</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+// ─── OPENSIGN COMPONENTS ───────────────────────────────────────────────────────
+function OpenSignSend({ inv, data, upd, t }) {
+  const [phase, setPhase]         = useState("idle"); // idle|sending|sent|error
+  const [signerEmail, setSignerEmail] = useState("");
+  const [signerName, setSignerName]   = useState(inv.customerName || "");
+  const [errorMsg, setErrorMsg]   = useState("");
+  const [showForm, setShowForm]   = useState(false);
+
+  const aiCfg    = data.aiConfig   || {};
+  const openCfg  = data.openSignConfig || {};
+  const apiKey   = openCfg.apiKey  || "";
+  const proxyUrl = openCfg.proxyUrl || "";
+  const cust     = data.customers.find(c => c.id === inv.customerId);
+
+  // Pre-fill email from customer record
+  useState(() => {
+    if (cust?.email && !signerEmail) setSignerEmail(cust.email);
+  }, [cust]);
+
+  const isConfigured = apiKey && proxyUrl;
+  const isSent       = !!inv.openSignUrl;
+  const isSigned     = !!inv.signedAt;
+
+  // Convert HTML string to base64
+  const htmlToBase64 = (html) => {
+    const bytes = new TextEncoder().encode(html);
+    let binary  = "";
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  };
+
+  const sendForSignature = async () => {
+    if (!signerEmail.trim()) { setErrorMsg("Enter the customer's email address."); return; }
+    if (!isConfigured)       { setErrorMsg("Add OpenSign API key and Worker URL in Settings first."); return; }
+
+    setPhase("sending"); setErrorMsg("");
+
+    try {
+      // Build the invoice+contract HTML
+      const co   = data.company || {};
+      const html = buildContractHTML(inv, cust, co, inv.contractTerms || {}, co.logo || "");
+
+      // Convert to base64
+      const base64File = htmlToBase64(html);
+
+      // Calculate total for the document title
+      const sub   = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+      const total = sub + sub * (Number(inv.taxRate || 0) / 100);
+      const docTitle = `${inv.number} — ${inv.customerName} — $${total.toFixed(2)}`;
+
+      // OpenSign Create Document payload
+      // Signature widget placed at bottom of last page (page 2 for typical contract)
+      // These coordinates work with our HTML-rendered PDF layout
+      const payload = {
+        title:    docTitle,
+        filebase64: `data:text/html;base64,${base64File}`,
+        note:     `Please review and sign the contract and invoice for ${docTitle}. Contact ${co.name || "your contractor"} with any questions.`,
+        signers: [
+          {
+            name:  signerName || inv.customerName,
+            email: signerEmail.trim(),
+            phone: cust?.phone || "",
+          }
+        ],
+        signerdetails: [
+          {
+            name:  signerName || inv.customerName,
+            email: signerEmail.trim(),
+            widgets: [
+              {
+                type: "signature",
+                page: 1,
+                x:    310,
+                y:    680,
+                w:    180,
+                h:    40,
+                options: { hint: "Sign here to approve the contract and invoice" }
+              },
+              {
+                type: "date",
+                page: 1,
+                x:    310,
+                y:    730,
+                w:    120,
+                h:    20,
+                options: {
+                  required:     true,
+                  name:         "signed_date",
+                  signing_date: true,
+                  format:       "mm/dd/yyyy",
+                  hint:         "Date"
+                }
+              },
+              {
+                type: "name",
+                page: 1,
+                x:    310,
+                y:    760,
+                w:    180,
+                h:    20,
+                options: {
+                  required: true,
+                  name:     "signer_name",
+                  hint:     "Print name"
+                }
+              }
+            ]
+          }
+        ],
+        sendmail: true,
+        expiredate: (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 30);
+          return d.toISOString().split("T")[0];
+        })()
+      };
+
+      // Call through Cloudflare Worker proxy
+      const res = await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/createdocument`, {
+        method:  "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-token":  apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.error) {
+        throw new Error(json.error?.message || json.message || `OpenSign error: ${res.status}`);
+      }
+
+      // Extract signing URL from response
+      // OpenSign returns signers array with url field
+      const signingUrl = json.signers?.[0]?.url
+        || json.data?.signers?.[0]?.url
+        || json.url
+        || "";
+
+      const documentId = json.objectId || json._id || json.id || "";
+
+      // Save to invoice
+      upd(inv.id, {
+        openSignUrl:        signingUrl,
+        openSignDocId:      documentId,
+        openSignSentTo:     signerEmail.trim(),
+        openSignSentAt:     today(),
+      });
+
+      setPhase("sent");
+      setShowForm(false);
+
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to send. Check your API key and Worker URL.");
+      setPhase("error");
+    }
+  };
+
+  const resendReminder = async () => {
+    if (!inv.openSignDocId || !isConfigured) return;
+    setPhase("sending");
+    try {
+      await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/resendrequestmail`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "x-api-token": apiKey },
+        body:    JSON.stringify({ documentId: inv.openSignDocId }),
+      });
+      setPhase("sent");
+      alert("Reminder sent to " + inv.openSignSentTo);
+    } catch {
+      setPhase("idle");
+      alert("Failed to resend reminder. Try again.");
+    }
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  // Not yet configured
+  if (!isConfigured) return (
+    <div style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 10, padding: 14 }}>
+      <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ E-Signature via OpenSign™</div>
+      <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
+        To enable one-tap signature sending, add your OpenSign API key and Worker URL in
+        <strong style={{ color: "#a78bfa" }}> Settings → OpenSign™</strong>.
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {isSent
+          ? <div style={{ color: "#4ade80", fontSize: 12 }}>🔗 Manual link saved — customer can still sign</div>
+          : <div style={{ color: "#334155", fontSize: 12 }}>Manual: paste a signing link below</div>
+        }
+      </div>
+      {/* Manual link fallback always available */}
+      <input value={inv.openSignUrl || ""} onChange={e => upd(inv.id, { openSignUrl: e.target.value })}
+        placeholder="Or paste an OpenSign link manually..."
+        style={{ width: "100%", marginTop: 8, background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+    </div>
+  );
+
+  // Already signed
+  if (isSigned) return (
+    <div style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 20 }}>✅</span>
+        <div>
+          <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>Contract Signed</div>
+          <div style={{ color: "#6b7280", fontSize: 11 }}>Signed {fmtDate(inv.signedAt)} · {inv.openSignSentTo || ""}</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Sent, awaiting signature
+  if (isSent && !showForm) return (
+    <div style={{ background: "#1a0a2e", border: "1px solid #7c3aed", borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>📧</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700 }}>Sent for Signature</div>
+          <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>
+            Sent to <strong style={{ color: "#e2e8f0" }}>{inv.openSignSentTo}</strong>
+            {inv.openSignSentAt ? ` on ${fmtDate(inv.openSignSentAt)}` : ""}
+          </div>
+        </div>
+        <button onClick={() => { upd(inv.id, { signedAt: today() }); }} style={{ background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+          ✅ Mark Signed
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        {inv.openSignUrl && (
+          <button onClick={() => { navigator.clipboard.writeText(inv.openSignUrl); alert("Signing link copied!"); }}
+            style={{ background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 6, padding: "6px 12px", color: "#a78bfa", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            📋 Copy Signing Link
+          </button>
+        )}
+        <button onClick={resendReminder} disabled={phase === "sending"}
+          style={{ background: "#0d1520", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          {phase === "sending" ? "Sending..." : "🔔 Resend Reminder Email"}
+        </button>
+        <button onClick={() => setShowForm(true)}
+          style={{ background: "#0d1520", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          ✉️ Resend to Different Email
+        </button>
+      </div>
+    </div>
+  );
+
+  // Send form
+  return (
+    <div style={{ background: "#1a0a2e", border: "2px solid #7c3aed", borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700 }}>✍️ Send for Signature via OpenSign™</div>
+        {isSent && <button onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14 }}>✕</button>}
+      </div>
+      <div style={{ color: "#64748b", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+        OpenSign will email the customer a signing link. They sign in their browser — no account needed. Both parties get a completion certificate automatically.
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ display: "block", color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Name</label>
+        <input value={signerName} onChange={e => setSignerName(e.target.value)}
+          placeholder="Customer full name"
+          style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: "block", color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Email <span style={{ color: "#ef4444" }}>*</span></label>
+        <input type="email" value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
+          placeholder="customer@email.com"
+          style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      </div>
+      {errorMsg && (
+        <div style={{ background: "#450a0a", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 12px", marginBottom: 10, color: "#f87171", fontSize: 12 }}>
+          ⚠️ {errorMsg}
+        </div>
+      )}
+      <button onClick={sendForSignature} disabled={phase === "sending" || !signerEmail.trim()}
+        style={{ width: "100%", background: phase === "sending" ? "#4c1d95" : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: phase === "sending" || !signerEmail.trim() ? "not-allowed" : "pointer", opacity: !signerEmail.trim() ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {phase === "sending"
+          ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⚙️</span> Sending to OpenSign...</>
+          : <>✍️ Send Contract for Signature</>
+        }
+      </button>
+      <div style={{ color: "#334155", fontSize: 10, marginTop: 8, textAlign: "center" }}>
+        Customer will receive an email from OpenSign with a secure signing link. No OpenSign account required for them.
+      </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILE 4: OpenSign Settings section for App.jsx
+// Paste inside the Settings component return, after the AI Estimator card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function OpenSignSettings({ data, setData, t }) {
+  const cfg = data.openSignConfig || {};
+  const [form, setForm] = useState({ apiKey: cfg.apiKey || "", proxyUrl: cfg.proxyUrl || "" });
+  const [saved, setSaved]     = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [showKey, setShowKey] = useState(false);
+
+  const save = () => {
+    setData(d => ({ ...d, openSignConfig: form }));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const testConnection = async () => {
+    if (!form.apiKey || !form.proxyUrl) {
+      setTestResult({ ok: false, msg: "Fill in both fields first." });
+      return;
+    }
+    setTesting(true); setTestResult(null);
+    try {
+      const res = await fetch(`${form.proxyUrl.replace(/\/$/, "")}/opensign/getuser`, {
+        headers: { "x-api-token": form.apiKey },
+      });
+      const d = await res.json();
+      if (res.ok && (d.name || d.email || d.objectId)) {
+        setTestResult({ ok: true, msg: `✅ Connected as: ${d.name || d.email || "OpenSign user"}` });
+      } else {
+        setTestResult({ ok: false, msg: `❌ ${d.error || d.message || "Invalid API key"}` });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: `❌ ${e.message} — check your Worker URL` });
+    }
+    setTesting(false);
+  };
+
+  return (
+    <div>
+      {/* What this does */}
+      <div style={{ background: `linear-gradient(135deg,${t.accent}15,${t.accent}05)`, border: `1px solid #7c3aed44`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ One-Tap E-Signature</div>
+        <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7 }}>
+          Connect your free OpenSign account to send contracts for signature directly from the app. Customer receives an email, signs in their browser — no account needed. Both parties get a signed PDF + audit trail automatically.
+        </div>
+      </div>
+
+      {/* Step 1 - Get API key */}
+      <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Step 1 — Get Your Free OpenSign API Key</div>
+        <ol style={{ color: t.subtext, fontSize: 12, paddingLeft: 18, lineHeight: 2 }}>
+          <li>Sign up free at <a href="https://app.opensignlabs.com" target="_blank" style={{ color: "#a78bfa" }}>app.opensignlabs.com</a></li>
+          <li>Go to <strong style={{ color: t.text }}>Settings → API Token</strong></li>
+          <li>Click <strong style={{ color: t.text }}>Generate Token</strong> → copy it</li>
+          <li>Paste it below</li>
+        </ol>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <input type={showKey ? "text" : "password"} value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
+            placeholder="Your OpenSign API token..."
+            style={{ flex: 1, background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+          <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 12px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+        </div>
+      </div>
+
+      {/* Step 2 - Deploy worker */}
+      <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Step 2 — Deploy the Free Cloudflare Worker (5 minutes)</div>
+        <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
+          Because browsers block direct API calls to third-party servers (CORS), a tiny free Cloudflare Worker acts as a secure middleman. It's free and handles up to 100,000 requests/day.
+        </div>
+        <ol style={{ color: t.subtext, fontSize: 12, paddingLeft: 18, lineHeight: 2, marginBottom: 10 }}>
+          <li>Sign up free at <a href="https://dash.cloudflare.com/sign-up/workers-and-pages" target="_blank" style={{ color: "#f97316" }}>dash.cloudflare.com</a></li>
+          <li>Go to <strong style={{ color: t.text }}>Workers & Pages → Create Application → Create Worker</strong></li>
+          <li>Name it <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy</code></li>
+          <li>Click <strong style={{ color: t.text }}>Edit Code</strong> → paste the Worker code from the <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy.js</code> file</li>
+          <li>Click <strong style={{ color: t.text }}>Save and Deploy</strong></li>
+          <li>Copy the Worker URL (e.g. <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy.yourname.workers.dev</code>)</li>
+          <li>Paste the URL below</li>
+        </ol>
+        <input value={form.proxyUrl} onChange={e => setForm(f => ({ ...f, proxyUrl: e.target.value }))}
+          placeholder="https://opensign-proxy.yourname.workers.dev"
+          style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+      </div>
+
+      {/* Test + Save */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={testConnection} disabled={testing || !form.apiKey || !form.proxyUrl}
+          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: (!form.apiKey || !form.proxyUrl) ? 0.5 : 1 }}>
+          {testing ? "Testing..." : "Test Connection"}
+        </button>
+        <button onClick={save}
+          style={{ background: saved ? "linear-gradient(135deg,#059669,#047857)" : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          {saved ? "✅ Saved!" : "Save OpenSign Settings"}
+        </button>
+        {testResult && <div style={{ color: testResult.ok ? "#4ade80" : "#f87171", fontSize: 12 }}>{testResult.msg}</div>}
+      </div>
+
+      <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.7 }}>
+        💡 <strong style={{ color: t.text }}>Privacy:</strong> Your API key is stored only on this device and sent only to your own Cloudflare Worker, which forwards it to OpenSign. It is never stored on any external server.
+      </div>
+    </div>
+  );
+}
+
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
-function Invoices({ data, setData, t }) {
+function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
@@ -640,17 +1846,45 @@ function Invoices({ data, setData, t }) {
     const h = data.company.venmoHandle || "";
     const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
     const total = sub + sub * (Number(inv.taxRate || 0) / 100);
-    if (h) window.open(`https://venmo.com/${h.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number)}&amount=${total.toFixed(2)}`, "_blank");
-    else alert("Add Venmo handle in Settings.");
+    if (!h) { alert("Add your Venmo handle in Settings → Company Info first."); return; }
+    // Use location.href for reliable mobile deep-link into Venmo app
+    window.location.href = `https://venmo.com/${h.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number + " — " + inv.customerName)}&amount=${total.toFixed(2)}`;
   };
 
+  // Download PDF as a file — works on mobile without popup blocker issues
+  const downloadPDF = inv => {
+    const cust = data.customers.find(c => c.id === inv.customerId);
+    const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
+    const blob = new Blob([html], { type: "text/html" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Open PDF in new tab for printing (desktop fallback)
   const printPDF = inv => {
     const cust = data.customers.find(c => c.id === inv.customerId);
     const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
     const win = window.open("", "_blank");
-    win.document.write(html);
-    win.document.close();
-    setTimeout(() => win.print(), 600);
+    if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 600); }
+    else downloadPDF(inv); // fallback if popup blocked
+  };
+
+  // Copy invoice share text to clipboard
+  const copyShareText = inv => {
+    const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+    const total = sub + sub * (Number(inv.taxRate || 0) / 100);
+    const co = data.company;
+    const venmo = co.venmoHandle ? `\n💙 Pay via Venmo: venmo.com/${co.venmoHandle.replace("@","")}?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(inv.number)}` : "";
+    const sign = inv.openSignUrl ? `\n✍️ Sign contract: ${inv.openSignUrl}` : "";
+    const creds = co.netlifyUrl ? `\n🛡️ Our credentials: ${co.netlifyUrl}/credentials` : "";
+    const text = `Hi ${inv.customerName},\n\nPlease find your invoice ${inv.number} for ${fmt$(total)} attached.\n${venmo}${sign}${creds}\n\nThank you,\n${co.name || "Your Contractor"}`;
+    navigator.clipboard.writeText(text).then(() => alert("Invoice message copied to clipboard! Paste it into a text or email.")).catch(() => alert(text));
   };
 
   const addPhoto = (inv, e) => {
@@ -704,23 +1938,70 @@ function Invoices({ data, setData, t }) {
           </div>
         </Card>
 
-        {/* Actions */}
-        <Card t={t} style={{ marginBottom: 14 }}>
-          <SectionLabel t={t}>Send to Customer</SectionLabel>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Btn t={t} variant="primary" onClick={() => printPDF(inv)} style={{ width: "100%", justifyContent: "center" }}><Icon d={IC.file} size={15} /> Print / Download Contract + Invoice PDF</Btn>
-            <Btn t={t} variant="sign" onClick={() => { window.open(inv.openSignUrl || "https://app.opensignlabs.com", "_blank"); }} style={{ width: "100%", justifyContent: "center" }}><Icon d={IC.pen} size={15} /> Open OpenSign™</Btn>
-          </div>
-        </Card>
+        {/* ── SEND INVOICE ACTION CENTER ─────────────────────────── */}
+        <Card t={t} style={{ marginBottom: 14, border: `2px solid ${t.accent}55` }}>
+          <SectionLabel t={t}>📤 Send Invoice to Customer</SectionLabel>
 
-        {/* OpenSign link */}
-        <Card t={t} style={{ marginBottom: 14 }}>
-          <SectionLabel t={t}>OpenSign™ Signing Link</SectionLabel>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={inv.openSignUrl || ""} onChange={e => upd(inv.id, { openSignUrl: e.target.value })} placeholder="https://app.opensignlabs.com/signrequest/..." style={{ flex: 1, background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-            <Btn t={t} size="sm" variant="ghost" onClick={() => { if (inv.openSignUrl) { navigator.clipboard.writeText(inv.openSignUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); } }}>{copied ? "✓" : <Icon d={IC.copy} size={12} />}</Btn>
+          {/* Step 1 — Download PDF */}
+          <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg,${t.accent},${t.accent2})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>1</div>
+              <div><div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Download Invoice + Contract PDF</div><div style={{ color: t.subtext, fontSize: 11 }}>Save file to phone, then share via text or email</div></div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => downloadPDF(inv)} style={{ flex: 1, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Icon d={IC.upload} size={14} color="#fff" /> Download PDF File
+              </button>
+              <button onClick={() => printPDF(inv)} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "11px 14px", color: t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
-          {inv.openSignUrl && !inv.signedAt && <Btn t={t} size="sm" variant="success" style={{ marginTop: 10 }} onClick={() => markSigned(inv.id)}><Icon d={IC.check} size={12} /> Mark as Signed</Btn>}
+
+          {/* Step 2 — Copy share message */}
+          <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#059669,#047857)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>2</div>
+              <div><div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Copy Message to Send Customer</div><div style={{ color: t.subtext, fontSize: 11 }}>Includes invoice #, total, Venmo link, and signing link</div></div>
+            </div>
+            <button onClick={() => copyShareText(inv)} style={{ width: "100%", background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Icon d={IC.copy} size={14} color="#fff" /> Copy Invoice Message
+            </button>
+          </div>
+
+          {/* Step 3 — E-Signature via OpenSign */}
+          <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#6d28d9)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>3</div>
+              <div>
+                <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>E-Signature</div>
+                <div style={{ color: t.subtext, fontSize: 11 }}>Send contract for customer to sign</div>
+              </div>
+            </div>
+            <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
+          </div>
+
+          {/* Step 4 — Get paid */}
+          <div style={{ background: t.surface2, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: inv.status === "paid" ? "linear-gradient(135deg,#059669,#047857)" : "linear-gradient(135deg,#008CFF,#0070CC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>4</div>
+              <div>
+                <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Payment</div>
+                <div style={{ color: t.subtext, fontSize: 11 }}>{inv.status === "paid" ? `✅ Paid ${inv.paidAt ? fmtDate(inv.paidAt) : ""}` : `${fmt$(total)} due`}</div>
+              </div>
+              {inv.status === "paid" && <span style={{ marginLeft: "auto", background: "#052e16", color: "#4ade80", borderRadius: 20, padding: "2px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>PAID ✓</span>}
+            </div>
+            {inv.status !== "paid" && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => openVenmo(inv)} style={{ flex: 1, background: "linear-gradient(135deg,#008CFF,#0070CC)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  💙 Open Venmo — {fmt$(total)}
+                </button>
+                <button onClick={() => markPaid(inv.id)} style={{ background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "11px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  ✅ Paid
+                </button>
+              </div>
+            )}
+          </div>
         </Card>
 
         {/* Photos */}
@@ -752,17 +2033,6 @@ function Invoices({ data, setData, t }) {
           )}
         </Card>
 
-        {/* Payment */}
-        {inv.status !== "paid" && (
-          <Card t={t} style={{ marginBottom: 14 }}>
-            <SectionLabel t={t}>Payment</SectionLabel>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Btn t={t} variant="venmo" onClick={() => openVenmo(inv)}>💙 Venmo ({fmt$(total)})</Btn>
-              <Btn t={t} variant="success" onClick={() => markPaid(inv.id)}><Icon d={IC.check} size={13} /> Mark Paid</Btn>
-            </div>
-          </Card>
-        )}
-
         {/* Contract terms */}
         <Card t={t} style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -791,36 +2061,105 @@ function Invoices({ data, setData, t }) {
     );
   }
 
+  // Apply filter from dashboard navigation or local filter buttons
+  const [localFilter, setLocalFilter] = useState(invoiceFilter || "all");
+
+  const filterInvoices = (invList, f) => {
+    if (f === "unpaid")   return invList.filter(i => i.status !== "paid");
+    if (f === "paid")     return invList.filter(i => i.status === "paid");
+    if (f === "unsigned") return invList.filter(i => i.status !== "paid" && !i.signedAt);
+    return invList;
+  };
+
+  const displayedInvoices = filterInvoices([...data.invoices].reverse(), localFilter);
+
+  const INVOICE_FILTERS = [
+    { key: "all",      label: "All",         count: data.invoices.length },
+    { key: "unpaid",   label: "Unpaid",      count: data.invoices.filter(i => i.status !== "paid").length },
+    { key: "unsigned", label: "Needs Sig",   count: data.invoices.filter(i => i.status !== "paid" && !i.signedAt).length },
+    { key: "paid",     label: "Paid",        count: data.invoices.filter(i => i.status === "paid").length },
+  ];
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Invoices + Contracts</h2>
       </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+        {INVOICE_FILTERS.map(f => (
+          <button key={f.key} onClick={() => setLocalFilter(f.key)}
+            style={{ background: localFilter === f.key ? t.muted : t.surface, border: `1px solid ${localFilter === f.key ? t.accent : t.border}`, borderRadius: 20, padding: "6px 14px", color: localFilter === f.key ? t.accent : t.subtext, fontSize: 12, fontWeight: localFilter === f.key ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
+            {f.label}
+            <span style={{ background: localFilter === f.key ? t.accent : t.border, color: localFilter === f.key ? "#fff" : t.subtext, borderRadius: 20, padding: "0px 6px", fontSize: 10, fontWeight: 700 }}>{f.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Workflow — each step is a real action button */}
       <Card t={t} style={{ marginBottom: 16, border: `1px solid #4c1d95` }}>
-        <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>✍️ Workflow</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, textAlign: "center" }}>
-          {[["1", "Estimate", "Estimates tab"], ["2", "→ Invoice", "Convert"], ["3", "PDF + Sign", "OpenSign link"], ["4", "Send", "Customer pays"]].map(([n, tt, s]) => (
-            <div key={n} style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 8, padding: "8px 4px" }}>
-              <div style={{ color: "#7c3aed", fontSize: 16, fontWeight: 800 }}>{n}</div>
-              <div style={{ color: t.text, fontSize: 11, fontWeight: 600 }}>{tt}</div>
-              <div style={{ color: t.subtext, fontSize: 10 }}>{s}</div>
-            </div>
+        <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>✍️ Quick Steps</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+          {[
+            { n: "1", label: "New Estimate", sub: "Build scope & price", color: "#2563eb", action: null, hint: "→ Go to Estimates tab" },
+            { n: "2", label: "→ Invoice",    sub: "Convert estimate",    color: "#059669", action: null, hint: "Open estimate → Convert" },
+            { n: "3", label: "Download PDF", sub: "Save & share file",   color: "#7c3aed", action: () => { if (data.invoices.length > 0) { const inv = data.invoices[data.invoices.length - 1]; setSelected(inv); setEditingContract(false); setView("detail"); } else alert("Create an invoice first."); }, hint: "Opens latest invoice" },
+            { n: "4", label: "Get Paid",     sub: "Venmo or mark paid",  color: "#f97316", action: () => setLocalFilter("unpaid"), hint: "View unpaid invoices" },
+          ].map(step => (
+            <button key={step.n} onClick={step.action || undefined} title={step.hint}
+              style={{ background: "#1a0a2e", border: `1px solid ${step.action ? step.color + "88" : "#4c1d95"}`, borderRadius: 8, padding: "10px 4px", textAlign: "center", cursor: step.action ? "pointer" : "default", fontFamily: "inherit", transition: "border-color 0.15s" }}
+              onMouseEnter={e => step.action && (e.currentTarget.style.borderColor = step.color)}
+              onMouseLeave={e => step.action && (e.currentTarget.style.borderColor = step.color + "88")}>
+              <div style={{ color: step.color, fontSize: 16, fontWeight: 800 }}>{step.n}</div>
+              <div style={{ color: t.text, fontSize: 11, fontWeight: 600, marginTop: 2 }}>{step.label}</div>
+              <div style={{ color: t.subtext, fontSize: 9, marginTop: 1 }}>{step.sub}</div>
+            </button>
           ))}
         </div>
       </Card>
-      {data.invoices.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ color: t.subtext }}>No invoices — convert an estimate first</div></Card>
-        : [...data.invoices].reverse().map(inv => {
+
+      {/* Accounting Exports */}
+      <Card t={t} style={{ marginBottom: 16, border: `1px solid ${t.accent}44` }}>
+        <SectionLabel t={t}>📊 Accounting Exports</SectionLabel>
+        <AccountingExports data={data} t={t} />
+      </Card>
+
+      {displayedInvoices.length === 0 ? (
+        <Card t={t} style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ color: t.subtext, marginBottom: 8 }}>
+            {data.invoices.length === 0 ? "No invoices yet — convert an estimate to create one" : `No ${localFilter === "all" ? "" : localFilter} invoices`}
+          </div>
+          {localFilter !== "all" && (
+            <button onClick={() => setLocalFilter("all")} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 16px", color: t.subtext, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Show All Invoices</button>
+          )}
+        </Card>
+      ) : displayedInvoices.map(inv => {
           const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
           const total = sub + sub * (Number(inv.taxRate || 0) / 100);
           return (
             <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setView("detail"); }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <div><div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{inv.number}</div><div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{inv.customerName}</div><div style={{ color: t.subtext, fontSize: 12 }}>{inv.jobTitle} · {fmtDate(inv.date)}</div></div>
-                <div style={{ textAlign: "right" }}><div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div><span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span></div>
+                <div>
+                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{inv.number}</div>
+                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{inv.customerName}</div>
+                  <div style={{ color: t.subtext, fontSize: 12 }}>{inv.jobTitle} · {fmtDate(inv.date)}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
+                  <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                    {inv.status === "paid" ? "✓ PAID" : "UNPAID"}
+                  </span>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>{inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Sig"}</div>
-                {(inv.photos || []).length > 0 && <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photos</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
+                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Signature"}
+                </div>
+                {(inv.photos || []).length > 0 && (
+                  <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photo{inv.photos.length !== 1 ? "s" : ""}</div>
+                )}
+                <div style={{ marginLeft: "auto", color: t.subtext, fontSize: 11, alignSelf: "center" }}>Tap to open →</div>
               </div>
             </Card>
           );
@@ -829,7 +2168,6 @@ function Invoices({ data, setData, t }) {
   );
 }
 
-// ─── CALENDAR ─────────────────────────────────────────────────────────────────
 function Calendar({ data, setData, t, setTab }) {
   const [cur, setCur] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
@@ -1012,6 +2350,7 @@ function Settings({ data, setData, t }) {
           <Inp t={t} label="ZIP" value={co.zip || ""} onChange={v => setCo(c => ({ ...c, zip: v }))} />
         </div>
         <Inp t={t} label="Venmo Handle" value={co.venmoHandle || ""} onChange={v => setCo(c => ({ ...c, venmoHandle: v }))} placeholder="@YourVenmo" />
+        <Inp t={t} label="Your App URL (Netlify)" value={co.netlifyUrl || ""} onChange={v => setCo(c => ({ ...c, netlifyUrl: v }))} placeholder="https://your-crm.netlify.app" />
       </Card>
 
       {/* Logo Upload */}
@@ -1096,16 +2435,22 @@ function Settings({ data, setData, t }) {
         {saved ? <><Icon d={IC.check} size={14} /> Saved!</> : "Save All Settings"}
       </Btn>
 
-      {/* OpenSign */}
+      {/* AI Estimator Settings */}
       <Card t={t} style={{ marginBottom: 16 }}>
-        <SectionLabel t={t}>OpenSign™ Setup</SectionLabel>
-        <div style={{ color: t.subtext, fontSize: 13, lineHeight: 1.8, marginBottom: 10 }}>
-          Free e-signature platform — no credit card needed.<br />
-          <strong style={{ color: "#a78bfa" }}>1.</strong> Sign up at <a href="https://app.opensignlabs.com" target="_blank" style={{ color: t.accent }}>app.opensignlabs.com</a><br />
-          <strong style={{ color: "#a78bfa" }}>2.</strong> Upload your Contract+Invoice PDF → add signature fields<br />
-          <strong style={{ color: "#a78bfa" }}>3.</strong> Copy signing link → paste into the invoice
-        </div>
-        <Btn t={t} variant="sign" onClick={() => window.open("https://app.opensignlabs.com", "_blank")}><Icon d={IC.link} size={13} /> Open OpenSign™</Btn>
+        <SectionLabel t={t}>🤖 AI Estimator</SectionLabel>
+        <AISettings data={data} setData={setData} t={t} />
+      </Card>
+
+      {/* Credentials */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>🛡️ Insurance & License Documents</SectionLabel>
+        <CredentialsManager data={data} setData={setData} t={t} />
+      </Card>
+
+      {/* OpenSign — Full Integration */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>✍️ OpenSign™ E-Signature</SectionLabel>
+        <OpenSignSettings data={data} setData={setData} t={t} />
       </Card>
 
       {/* Backup */}
@@ -1131,6 +2476,8 @@ function Settings({ data, setData, t }) {
 export default function App() {
   const [data, setDataRaw] = useState(loadData);
   const [tab, setTab] = useState("dashboard");
+  const [jobFilter, setJobFilter] = useState("all");
+  const [invoiceFilter, setInvoiceFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -1162,6 +2509,13 @@ export default function App() {
       saveData(n, userRef.current?.uid);
       return n;
     });
+  }, []);
+
+  // Navigate to a tab with an optional filter — resets filter when switching tabs manually
+  const goTo = useCallback((tabId, filter = "all") => {
+    if (tabId === "jobs")     setJobFilter(filter);
+    if (tabId === "invoices") setInvoiceFilter(filter);
+    setTab(tabId);
   }, []);
 
   const t = getTheme(data.theme);
@@ -1221,29 +2575,40 @@ export default function App() {
             <div style={{ color: t.text, fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{data.company.name || "My Business"}</div>
           </div>
         </div>
+        {/* Clickable badge shortcuts */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {syncing && <div style={{ background: "#1e3a5f", border: "1px solid #2563eb", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#60a5fa", fontWeight: 700 }}>syncing…</div>}
           <div onClick={signOutUser} title='Sign out' style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '3px 10px', fontSize: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
-          {unsigned > 0 && <div style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#a78bfa", fontWeight: 700 }}>{unsigned} sig</div>}
-          {unpaid > 0 && <div style={{ background: "#431407", border: "1px solid #f97316", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#f97316", fontWeight: 700 }}>{unpaid} unpaid</div>}
+          {unsigned > 0 && (
+            <button onClick={() => goTo("invoices", "unsigned")}
+              style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#a78bfa", fontWeight: 700, cursor: "pointer" }}>
+              {unsigned} unsigned
+            </button>
+          )}
+          {unpaid > 0 && (
+            <button onClick={() => goTo("invoices", "unpaid")}
+              style={{ background: "#431407", border: "1px solid #f97316", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#f97316", fontWeight: 700, cursor: "pointer" }}>
+              {unpaid} unpaid
+            </button>
+          )}
         </div>
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 110px" }}>
-        {tab === "dashboard" && <Dashboard data={data} t={t} />}
+        {tab === "dashboard" && <Dashboard data={data} t={t} setTab={goTo} setInvoiceFilter={f => setInvoiceFilter(f)} setJobFilter={f => setJobFilter(f)} />}
         {tab === "customers" && <Customers data={data} setData={setData} t={t} />}
-        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} />}
+        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} />}
         {tab === "estimates" && <Estimates data={data} setData={setData} t={t} />}
-        {tab === "invoices"  && <Invoices data={data} setData={setData} t={t} />}
-        {tab === "calendar"  && <Calendar data={data} setData={setData} t={t} setTab={setTab} />}
+        {tab === "invoices"  && <Invoices data={data} setData={setData} t={t} initialFilter={invoiceFilter} />}
+        {tab === "calendar"  && <Calendar data={data} setData={setData} t={t} setTab={id => goTo(id)} />}
         {tab === "settings"  && <Settings data={data} setData={setData} t={t} />}
       </div>
 
       {/* Bottom nav */}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: t.surface, borderTop: `1px solid ${t.border}`, display: "flex", zIndex: 20, paddingBottom: "env(safe-area-inset-bottom)" }}>
         {tabs.map(tb => (
-          <button key={tb.id} onClick={() => setTab(tb.id)}
+          <button key={tb.id} onClick={() => goTo(tb.id)}
             style={{ flex: 1, background: "none", border: "none", padding: "8px 2px 6px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: tab === tb.id ? t.accent : t.muted, transition: "color 0.15s", fontFamily: "inherit" }}>
             <Icon d={IC[tb.icon]} size={18} color={tab === tb.id ? t.accent : t.muted} />
             <span style={{ fontSize: 9, fontWeight: tab === tb.id ? 700 : 500, letterSpacing: "0.02em" }}>{tb.label}</span>
