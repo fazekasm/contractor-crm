@@ -2110,7 +2110,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   }
 
   // Apply filter from dashboard navigation or local filter buttons
-  const [localFilter, setLocalFilter] = useState(invoiceFilter || "all");
+  const [localFilter, setLocalFilter] = useState(initialFilter || "all");
 
   const filterInvoices = (invList, f) => {
     if (f === "unpaid")   return invList.filter(i => i.status !== "paid");
