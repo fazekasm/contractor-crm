@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { onAuthChange, loadFromFirestore, signInWithGoogle, signOutUser, saveToFirestore, auth } from './firebase.js'
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
@@ -103,7 +104,7 @@ const defaultData = () => ({
   customers: [], jobs: [], estimates: [], invoices: [],
   credentials: { docs: [] },
   qboConfig: { clientId: "", realmId: "", accessToken: "" },
-  openSignConfig: { apiKey: "", proxyUrl: "" },
+  openSignConfig: { apiKey: "", proxyUrl: "", backendUrl: "" },
   aiConfig: { apiKey: "", model: "claude-sonnet-4-5", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
@@ -1440,17 +1441,19 @@ function OpenSignSend({ inv, data, upd, t }) {
   const [showForm, setShowForm]   = useState(false);
 
   const aiCfg    = data.aiConfig   || {};
-  const openCfg  = data.openSignConfig || {};
-  const apiKey   = openCfg.apiKey  || "";
-  const proxyUrl = openCfg.proxyUrl || "";
-  const cust     = data.customers.find(c => c.id === inv.customerId);
+  const openCfg   = data.openSignConfig || {};
+  const apiKey    = openCfg.apiKey    || "";
+  const proxyUrl  = openCfg.proxyUrl  || "";
+  const backendUrl = (openCfg.backendUrl || "").replace(/\/$/, "");
+  const cust      = data.customers.find(c => c.id === inv.customerId);
 
   // Pre-fill email from customer record
   useState(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
   }, [cust]);
 
-  const isConfigured = apiKey && proxyUrl;
+  // Configured if we have a backend URL (new flow) OR legacy proxyUrl + apiKey
+  const isConfigured = !!backendUrl || (apiKey && proxyUrl);
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
 
@@ -1548,37 +1551,67 @@ function OpenSignSend({ inv, data, upd, t }) {
         })()
       };
 
-      // Call through Cloudflare Worker proxy
-      const res = await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/createdocument`, {
-        method:  "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-token":  apiKey,
-        },
-        body: JSON.stringify(payload),
-      });
+      let signingUrl = "";
+      let opensignDocId = "";
+      let backendDocId = "";
 
-      const json = await res.json();
+      if (backendUrl) {
+        // ── New flow: call contractor-crm-backend ──────────────────
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error("Not signed in — please refresh and sign in again.");
 
-      if (!res.ok || json.error) {
-        throw new Error(json.error?.message || json.message || `OpenSign error: ${res.status}`);
+        const res = await fetch(`${backendUrl}/api/opensign/send`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            documentType: "invoice",
+            title:        docTitle,
+            note:         payload.note,
+            pdfBase64:    base64File,
+            signers: [{
+              name:  signerName || inv.customerName,
+              email: signerEmail.trim(),
+              phone: cust?.phone || "",
+              role:  "customer",
+            }],
+            expiresInDays: 30,
+          }),
+        });
+
+        const json = await res.json();
+        if (!res.ok || json.error) {
+          throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+        }
+
+        signingUrl   = json.signingUrl || "";
+        opensignDocId = json.opensignDocId || "";
+        backendDocId  = json.documentId   || "";
+
+      } else {
+        // ── Legacy flow: Cloudflare Worker proxy ───────────────────
+        const res = await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/createdocument`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "x-api-token": apiKey },
+          body:    JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) {
+          throw new Error(json.error?.message || json.message || `OpenSign error: ${res.status}`);
+        }
+        signingUrl    = json.signers?.[0]?.url || json.data?.signers?.[0]?.url || json.url || "";
+        opensignDocId = json.objectId || json._id || json.id || "";
       }
-
-      // Extract signing URL from response
-      // OpenSign returns signers array with url field
-      const signingUrl = json.signers?.[0]?.url
-        || json.data?.signers?.[0]?.url
-        || json.url
-        || "";
-
-      const documentId = json.objectId || json._id || json.id || "";
 
       // Save to invoice
       upd(inv.id, {
-        openSignUrl:        signingUrl,
-        openSignDocId:      documentId,
-        openSignSentTo:     signerEmail.trim(),
-        openSignSentAt:     today(),
+        openSignUrl:         signingUrl,
+        openSignDocId:       opensignDocId,
+        openSignBackendDocId: backendDocId,
+        openSignSentTo:      signerEmail.trim(),
+        openSignSentAt:      today(),
       });
 
       setPhase("sent");
@@ -1594,11 +1627,21 @@ function OpenSignSend({ inv, data, upd, t }) {
     if (!inv.openSignDocId || !isConfigured) return;
     setPhase("sending");
     try {
-      await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/resendrequestmail`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", "x-api-token": apiKey },
-        body:    JSON.stringify({ documentId: inv.openSignDocId }),
-      });
+      if (backendUrl) {
+        const token = await auth.currentUser?.getIdToken();
+        const docId = inv.openSignBackendDocId || inv.openSignDocId;
+        await fetch(`${backendUrl}/api/opensign/resend`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body:    JSON.stringify({ documentId: docId }),
+        });
+      } else {
+        await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/resendrequestmail`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "x-api-token": apiKey },
+          body:    JSON.stringify({ documentId: inv.openSignDocId }),
+        });
+      }
       setPhase("sent");
       alert("Reminder sent to " + inv.openSignSentTo);
     } catch {
@@ -1606,7 +1649,6 @@ function OpenSignSend({ inv, data, upd, t }) {
       alert("Failed to resend reminder. Try again.");
     }
   };
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   // Not yet configured
@@ -1728,7 +1770,11 @@ function OpenSignSend({ inv, data, upd, t }) {
 
 function OpenSignSettings({ data, setData, t }) {
   const cfg = data.openSignConfig || {};
-  const [form, setForm] = useState({ apiKey: cfg.apiKey || "", proxyUrl: cfg.proxyUrl || "" });
+  const [form, setForm] = useState({
+    apiKey:     cfg.apiKey     || "",
+    proxyUrl:   cfg.proxyUrl   || "",
+    backendUrl: cfg.backendUrl || "",
+  });
   const [saved, setSaved]     = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -1741,23 +1787,33 @@ function OpenSignSettings({ data, setData, t }) {
   };
 
   const testConnection = async () => {
-    if (!form.apiKey || !form.proxyUrl) {
-      setTestResult({ ok: false, msg: "Fill in both fields first." });
+    const backendUrl = (form.backendUrl || "").replace(/\/$/, "");
+    if (!backendUrl && (!form.apiKey || !form.proxyUrl)) {
+      setTestResult({ ok: false, msg: "Fill in Backend URL (or legacy API key + Worker URL)." });
       return;
     }
     setTesting(true); setTestResult(null);
     try {
-      const res = await fetch(`${form.proxyUrl.replace(/\/$/, "")}/opensign/getuser`, {
-        headers: { "x-api-token": form.apiKey },
-      });
-      const d = await res.json();
-      if (res.ok && (d.name || d.email || d.objectId)) {
-        setTestResult({ ok: true, msg: `✅ Connected as: ${d.name || d.email || "OpenSign user"}` });
+      if (backendUrl) {
+        const res = await fetch(`${backendUrl}/health`);
+        if (res.ok) {
+          setTestResult({ ok: true, msg: "✅ Backend reachable — ready to send documents." });
+        } else {
+          setTestResult({ ok: false, msg: `❌ Backend returned ${res.status}. Check the URL.` });
+        }
       } else {
-        setTestResult({ ok: false, msg: `❌ ${d.error || d.message || "Invalid API key"}` });
+        const res = await fetch(`${form.proxyUrl.replace(/\/$/, "")}/opensign/getuser`, {
+          headers: { "x-api-token": form.apiKey },
+        });
+        const d = await res.json();
+        if (res.ok && (d.name || d.email || d.objectId)) {
+          setTestResult({ ok: true, msg: `✅ Connected as: ${d.name || d.email || "OpenSign user"}` });
+        } else {
+          setTestResult({ ok: false, msg: `❌ ${d.error || d.message || "Invalid API key"}` });
+        }
       }
     } catch (e) {
-      setTestResult({ ok: false, msg: `❌ ${e.message} — check your Worker URL` });
+      setTestResult({ ok: false, msg: `❌ ${e.message}` });
     }
     setTesting(false);
   };
@@ -1766,53 +1822,46 @@ function OpenSignSettings({ data, setData, t }) {
     <div>
       {/* What this does */}
       <div style={{ background: `linear-gradient(135deg,${t.accent}15,${t.accent}05)`, border: `1px solid #7c3aed44`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
-        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ One-Tap E-Signature</div>
+        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ One-Tap E-Signature via OpenSign™</div>
         <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7 }}>
-          Connect your free OpenSign account to send contracts for signature directly from the app. Customer receives an email, signs in their browser — no account needed. Both parties get a signed PDF + audit trail automatically.
+          Send contracts and invoices for e-signature directly from the app. Your self-hosted OpenSign backend handles delivery — no third-party service needed. Customer receives an email, signs in their browser, and both parties get a signed PDF automatically.
         </div>
       </div>
 
-      {/* Step 1 - Get API key */}
+      {/* Backend URL — primary config */}
       <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Step 1 — Get Your Free OpenSign API Key</div>
-        <ol style={{ color: t.subtext, fontSize: 12, paddingLeft: 18, lineHeight: 2 }}>
-          <li>Sign up free at <a href="https://app.opensignlabs.com" target="_blank" style={{ color: "#a78bfa" }}>app.opensignlabs.com</a></li>
-          <li>Go to <strong style={{ color: t.text }}>Settings → API Token</strong></li>
-          <li>Click <strong style={{ color: t.text }}>Generate Token</strong> → copy it</li>
-          <li>Paste it below</li>
-        </ol>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <input type={showKey ? "text" : "password"} value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
-            placeholder="Your OpenSign API token..."
-            style={{ flex: 1, background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-          <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 12px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
-        </div>
-      </div>
-
-      {/* Step 2 - Deploy worker */}
-      <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Step 2 — Deploy the Free Cloudflare Worker (5 minutes)</div>
+        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Backend URL</div>
         <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
-          Because browsers block direct API calls to third-party servers (CORS), a tiny free Cloudflare Worker acts as a secure middleman. It's free and handles up to 100,000 requests/day.
+          Your CRM backend handles document sending securely. Enter the Railway backend URL below.
         </div>
-        <ol style={{ color: t.subtext, fontSize: 12, paddingLeft: 18, lineHeight: 2, marginBottom: 10 }}>
-          <li>Sign up free at <a href="https://dash.cloudflare.com/sign-up/workers-and-pages" target="_blank" style={{ color: "#f97316" }}>dash.cloudflare.com</a></li>
-          <li>Go to <strong style={{ color: t.text }}>Workers & Pages → Create Application → Create Worker</strong></li>
-          <li>Name it <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy</code></li>
-          <li>Click <strong style={{ color: t.text }}>Edit Code</strong> → paste the Worker code from the <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy.js</code> file</li>
-          <li>Click <strong style={{ color: t.text }}>Save and Deploy</strong></li>
-          <li>Copy the Worker URL (e.g. <code style={{ background: t.surface2, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>opensign-proxy.yourname.workers.dev</code>)</li>
-          <li>Paste the URL below</li>
-        </ol>
-        <input value={form.proxyUrl} onChange={e => setForm(f => ({ ...f, proxyUrl: e.target.value }))}
-          placeholder="https://opensign-proxy.yourname.workers.dev"
-          style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+        <input
+          value={form.backendUrl}
+          onChange={e => setForm(f => ({ ...f, backendUrl: e.target.value }))}
+          placeholder="https://contractor-crm-backend-production.up.railway.app"
+          style={{ width: "100%", background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+        />
       </div>
+
+      {/* Legacy API key (shown collapsed if backendUrl set) */}
+      {!form.backendUrl && (
+        <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+          <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Legacy: OpenSign API Key</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type={showKey ? "text" : "password"} value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
+              placeholder="Your OpenSign API token..."
+              style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+            <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 12px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+          </div>
+          <input value={form.proxyUrl} onChange={e => setForm(f => ({ ...f, proxyUrl: e.target.value }))}
+            placeholder="https://opensign-proxy.yourname.workers.dev"
+            style={{ width: "100%", marginTop: 8, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+        </div>
+      )}
 
       {/* Test + Save */}
       <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={testConnection} disabled={testing || !form.apiKey || !form.proxyUrl}
-          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: (!form.apiKey || !form.proxyUrl) ? 0.5 : 1 }}>
+        <button onClick={testConnection} disabled={testing || (!form.backendUrl && (!form.apiKey || !form.proxyUrl))}
+          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: (!form.backendUrl && (!form.apiKey || !form.proxyUrl)) ? 0.5 : 1 }}>
           {testing ? "Testing..." : "Test Connection"}
         </button>
         <button onClick={save}
@@ -1823,12 +1872,11 @@ function OpenSignSettings({ data, setData, t }) {
       </div>
 
       <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.7 }}>
-        💡 <strong style={{ color: t.text }}>Privacy:</strong> Your API key is stored only on this device and sent only to your own Cloudflare Worker, which forwards it to OpenSign. It is never stored on any external server.
+        💡 <strong style={{ color: t.text }}>Security:</strong> All document requests go through your own backend with Firebase authentication. No third-party proxy needed.
       </div>
     </div>
   );
 }
-
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
 function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
