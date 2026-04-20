@@ -105,7 +105,7 @@ const defaultData = () => ({
   credentials: { docs: [] },
   qboConfig: { clientId: "", realmId: "", accessToken: "" },
   openSignConfig: { apiKey: "", proxyUrl: "", backendUrl: "" },
-  aiConfig: { apiKey: "", model: "claude-sonnet-4-5", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
+  aiConfig: { provider: "claude", apiKey: "", model: "claude-sonnet-4-5", openaiKey: "", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
 const loadData = () => { try { return { ...defaultData(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch { return defaultData(); } };
@@ -580,18 +580,34 @@ function AISettings({ data, setData, t }) {
   const save = () => { setData(d => ({ ...d, aiConfig: ai })); setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
   const testConnection = async () => {
-    if (!ai.apiKey) { setTestResult({ ok: false, msg: "Enter your API key first." }); return; }
-    setTesting(true); setTestResult(null);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": ai.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: ai.model || "claude-sonnet-4-5", max_tokens: 30, messages: [{ role: "user", content: "Reply only: API_OK" }] })
-      });
-      const d = await res.json();
-      if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
-      else setTestResult({ ok: true, msg: "✅ Connected! API key is working." });
-    } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
+    const provider = ai.provider || "claude";
+    if (provider === "openai") {
+      if (!ai.openaiKey) { setTestResult({ ok: false, msg: "Enter your OpenAI API key first." }); return; }
+      setTesting(true); setTestResult(null);
+      try {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${ai.openaiKey}` },
+          body: JSON.stringify({ model: ai.openaiModel || "gpt-4o-mini", max_tokens: 10, messages: [{ role: "user", content: "Reply only: API_OK" }] })
+        });
+        const d = await res.json();
+        if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
+        else setTestResult({ ok: true, msg: "✅ Connected! OpenAI key is working." });
+      } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
+    } else {
+      if (!ai.apiKey) { setTestResult({ ok: false, msg: "Enter your Anthropic API key first." }); return; }
+      setTesting(true); setTestResult(null);
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": ai.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: ai.model || "claude-sonnet-4-5", max_tokens: 30, messages: [{ role: "user", content: "Reply only: API_OK" }] })
+        });
+        const d = await res.json();
+        if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
+        else setTestResult({ ok: true, msg: "✅ Connected! API key is working." });
+      } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
+    }
     setTesting(false);
   };
 
@@ -604,22 +620,57 @@ function AISettings({ data, setData, t }) {
           <span style={{ fontSize: 22 }}>🤖</span>
           <div><div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>AI Estimator</div><div style={{ color: t.subtext, fontSize: 11 }}>Choose your AI provider below</div></div>
         </div>
+
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>API Key <span style={{ color: "#ef4444" }}>*</span></label>
+          <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>AI Provider</label>
           <div style={{ display: "flex", gap: 8 }}>
-            <input type={showKey ? "text" : "password"} value={ai.apiKey || ""} onChange={e => setAi(a => ({ ...a, apiKey: e.target.value }))} placeholder="sk-ant-api03-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-            <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+            {[["claude","🟣 Claude (Anthropic)"],["openai","🟢 ChatGPT (OpenAI)"]].map(([val, label]) => (
+              <button key={val} onClick={() => setAi(a => ({ ...a, provider: val }))}
+                style={{ flex: 1, background: (ai.provider || "claude") === val ? `linear-gradient(135deg,${t.accent},${t.accent2})` : t.surface2, border: `1px solid ${(ai.provider || "claude") === val ? t.accent : t.border}`, borderRadius: 8, padding: "9px 10px", color: (ai.provider || "claude") === val ? "#fff" : t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
           </div>
-          <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get free key at <a href="https://console.anthropic.com" target="_blank" style={{ color: t.accent }}>console.anthropic.com</a> → API Keys. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
-          <select value={ai.model || "claude-sonnet-4-5"} onChange={e => setAi(a => ({ ...a, model: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-            <option value="claude-sonnet-4-5">Claude Sonnet 4.5 — Fast & affordable ★ Recommended</option>
-            <option value="claude-opus-4-5">Claude Opus 4.5 — Most powerful, slower & costlier</option>
-            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest, lowest cost</option>
-          </select>
-        </div>
+
+        {(ai.provider || "claude") === "claude" ? (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Anthropic API Key <span style={{ color: "#ef4444" }}>*</span></label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type={showKey ? "text" : "password"} value={ai.apiKey || ""} onChange={e => setAi(a => ({ ...a, apiKey: e.target.value }))} placeholder="sk-ant-api03-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+              </div>
+              <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get key at <a href="https://console.anthropic.com" target="_blank" style={{ color: t.accent }}>console.anthropic.com</a> → API Keys. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
+              <select value={ai.model || "claude-sonnet-4-5"} onChange={e => setAi(a => ({ ...a, model: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5 — Fast & affordable ★ Recommended</option>
+                <option value="claude-opus-4-5">Claude Opus 4.5 — Most powerful, slower & costlier</option>
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest, lowest cost</option>
+              </select>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>OpenAI API Key <span style={{ color: "#ef4444" }}>*</span></label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type={showKey ? "text" : "password"} value={ai.openaiKey || ""} onChange={e => setAi(a => ({ ...a, openaiKey: e.target.value }))} placeholder="sk-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
+              </div>
+              <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get key at <a href="https://platform.openai.com/api-keys" target="_blank" style={{ color: t.accent }}>platform.openai.com/api-keys</a>. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
+              <select value={ai.openaiModel || "gpt-4o-mini"} onChange={e => setAi(a => ({ ...a, openaiModel: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                <option value="gpt-4o-mini">GPT-4o mini — Fast & affordable ★ Recommended</option>
+                <option value="gpt-4o">GPT-4o — Most capable, higher cost</option>
+              </select>
+            </div>
+          </>
+        )}
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={testConnection} disabled={testing} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "9px 16px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer" }}>{testing ? "Testing..." : "Test Connection"}</button>
           {testResult && <span style={{ color: testResult.ok ? "#4ade80" : "#f87171", fontSize: 12 }}>{testResult.msg}</span>}
@@ -743,7 +794,7 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
       {phase === "generating" && (
         <div style={{ textAlign: "center", padding: "28px 0" }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>⚙️</div>
-          <div style={{ color: "#a78bfa", fontSize: 14, fontWeight: 600 }}>Claude is building your estimate...</div>
+          <div style={{ color: "#a78bfa", fontSize: 14, fontWeight: 600 }}>{provider === "openai" ? "ChatGPT" : "Claude"} is building your estimate...</div>
           <div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>Analyzing scope and pricing line items</div>
         </div>
       )}
