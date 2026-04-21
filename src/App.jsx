@@ -318,8 +318,8 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
   const statusCounts = {};
   STATUSES.forEach(s => { statusCounts[s.key] = data.jobs.filter(j => j.status === s.key).length; });
 
-  const goInvoices = (filter) => { setInvoiceFilter(filter); setTab("invoices"); };
-  const goJobs = (filter) => { setJobFilter(filter); setTab("jobs"); };
+  const goInvoices = (filter) => { setTab("invoices", filter); };
+  const goJobs = (filter) => { setTab("jobs", filter); };
 
   const statCards = [
     { label: "Collected",    value: fmt$(paid),        color: "#4ade80", sub: "Tap to view paid invoices",       onClick: () => goInvoices("paid") },
