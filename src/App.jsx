@@ -119,8 +119,8 @@ const getTheme = (themeData) => {
 };
 
 // ─── UI PRIMITIVES ────────────────────────────────────────────────────────────
-const Card = ({ children, style, t }) => (
-  <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, ...style }}>
+const Card = ({ children, style, t, ...rest }) => (
+  <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, ...style }} {...rest}>
     {children}
   </div>
 );
