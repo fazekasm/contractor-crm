@@ -173,17 +173,18 @@ const SectionLabel = ({ children, t }) => (
 
 // ─── CONTRACT HTML BUILDER ────────────────────────────────────────────────────
 function buildContractHTML(inv, cust, co, contractTerms, logo) {
-  const subtotal = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-  const taxAmt = subtotal * (Number(inv.taxRate || 0) / 100);
+  const lines = Array.isArray(inv?.lines) ? inv.lines : [];
+  const subtotal = lines.reduce((s, l) => s + Number(l?.qty || 0) * Number(l?.unitPrice || 0), 0);
+  const taxAmt = subtotal * (Number(inv?.taxRate || 0) / 100);
   const total = subtotal + taxAmt;
-  const venmoHandle = co.venmoHandle || "";
+  const venmoHandle = co?.venmoHandle || "";
 
-  const lineRows = (inv.lines || []).map(l => `
+  const lineRows = lines.map(l => `
     <tr>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${l.description || "—"}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${l.qty} ${l.unit}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">${fmt$(l.unitPrice)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px">${fmt$(Number(l.qty) * Number(l.unitPrice))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${typeof l?.description === "string" ? l.description : (l?.description ? String(l.description) : "—")}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${l?.qty ?? 0} ${l?.unit || ""}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">${fmt$(l?.unitPrice)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px">${fmt$(Number(l?.qty || 0) * Number(l?.unitPrice || 0))}</td>
     </tr>`).join("");
 
   const photoSection = (inv.photos && inv.photos.length > 0) ? `
@@ -269,21 +270,21 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
     ${Number(inv.taxRate) > 0 ? `<div class="t-row"><span>Tax (${inv.taxRate}%)</span><span>${fmt$(taxAmt)}</span></div>` : ""}
     <div class="t-total"><span>Total Due</span><span>${fmt$(total)}</span></div>
   </div>
-  ${inv.notes ? `<div class="notice"><strong>Scope Notes:</strong> ${inv.notes}</div>` : ""}
+  ${typeof inv.notes === 'string' && inv.notes ? `<div class="notice"><strong>Scope Notes:</strong> ${inv.notes}</div>` : ""}
   ${photoSection}
   <h2>Oregon Residential Construction Contract — Required Disclosures</h2>
   <div class="notice"><strong>Oregon Law Notice:</strong> Oregon law requires residential contractors to be licensed with the Oregon CCB. Verify at <strong>oregon.gov/ccb</strong> or call 503-378-4621.</div>
   <div class="clause"><span class="clause-num">1.</span><strong>Right to Cancel (ORS 83.820):</strong> For home solicitation contracts, the Owner has three (3) business days to cancel without penalty.</div>
   <div class="clause"><span class="clause-num">2.</span><strong>CCB License:</strong> Contractor holds valid Oregon CCB license #${co.ccbNumber || "__________"} and maintains required insurance.</div>
   <div class="clause"><span class="clause-num">3.</span><strong>Lien Rights (ORS 87.093):</strong> Those who supply labor or materials may file a lien on your property if unpaid.</div>
-  <div class="clause"><span class="clause-num">4.</span><strong>Payment Schedule:</strong> ${contractTerms?.paymentSchedule || "Payment due upon completion unless otherwise agreed in writing."}</div>
+  <div class="clause"><span class="clause-num">4.</span><strong>Payment Schedule:</strong> ${typeof contractTerms?.paymentSchedule === 'string' ? contractTerms.paymentSchedule || "Payment due upon completion unless otherwise agreed in writing." : "Payment due upon completion unless otherwise agreed in writing."}</div>
   <div class="clause"><span class="clause-num">5.</span><strong>Change Orders:</strong> All scope or cost changes must be agreed to in writing before additional work begins.</div>
-  <div class="clause"><span class="clause-num">6.</span><strong>Warranties:</strong> ${contractTerms?.warranty || "Contractor warrants all labor and materials for one (1) year from substantial completion."}</div>
-  <div class="clause"><span class="clause-num">7.</span><strong>Permits:</strong> ${contractTerms?.permits || "Contractor shall obtain all required permits. Cost included unless noted."}</div>
+  <div class="clause"><span class="clause-num">6.</span><strong>Warranties:</strong> ${typeof contractTerms?.warranty === 'string' ? contractTerms.warranty || "Contractor warrants all labor and materials for one (1) year from substantial completion." : "Contractor warrants all labor and materials for one (1) year from substantial completion."}</div>
+  <div class="clause"><span class="clause-num">7.</span><strong>Permits:</strong> ${typeof contractTerms?.permits === 'string' ? contractTerms.permits || "Contractor shall obtain all required permits. Cost included unless noted." : "Contractor shall obtain all required permits. Cost included unless noted."}</div>
   <div class="clause"><span class="clause-num">8.</span><strong>Dispute Resolution:</strong> Parties agree to mediation before arbitration or litigation. Complaints: Oregon CCB 503-378-4621.</div>
   <div class="clause"><span class="clause-num">9.</span><strong>Insurance:</strong> Contractor maintains general liability insurance of not less than $100,000 per occurrence.</div>
   <div class="clause"><span class="clause-num">10.</span><strong>Entire Agreement:</strong> This document constitutes the entire agreement. No oral representations shall modify these terms.</div>
-  ${contractTerms?.additional ? `<div class="clause"><span class="clause-num">11.</span><strong>Additional Terms:</strong> ${contractTerms.additional}</div>` : ""}
+  ${typeof contractTerms?.additional === 'string' && contractTerms.additional ? `<div class="clause"><span class="clause-num">11.</span><strong>Additional Terms:</strong> ${contractTerms.additional}</div>` : ""}
   <h2>Signatures</h2>
   <p style="color:#6b7280;font-size:12px;margin-bottom:16px">By signing below, both parties agree to all terms in this contract.</p>
   <div class="sig-grid">
@@ -577,7 +578,20 @@ function AISettings({ data, setData, t }) {
   const [testResult, setTestResult] = useState(null);
   const [showKey, setShowKey] = useState(false);
 
-  const save = () => { setData(d => ({ ...d, aiConfig: ai })); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const save = () => {
+    const provider = ai.provider || "claude";
+    // When saving, ensure the active provider's model is always a valid string default
+    // so provider and model never mismatch in stored config
+    const normalized = {
+      ...ai,
+      provider,
+      model:       provider === "claude"  ? (ai.model       || "claude-sonnet-4-5") : "claude-sonnet-4-5",
+      openaiModel: provider === "openai"  ? (ai.openaiModel || "gpt-4o-mini")        : "gpt-4o-mini",
+    };
+    setData(d => ({ ...d, aiConfig: normalized }));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   const testConnection = async () => {
     const provider = ai.provider || "claude";
@@ -625,7 +639,7 @@ function AISettings({ data, setData, t }) {
           <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>AI Provider</label>
           <div style={{ display: "flex", gap: 8 }}>
             {[["claude","🟣 Claude (Anthropic)"],["openai","🟢 ChatGPT (OpenAI)"]].map(([val, label]) => (
-              <button key={val} onClick={() => setAi(a => ({ ...a, provider: val }))}
+              <button key={val} onClick={() => setAi(a => ({ ...a, provider: val, model: val === "claude" ? (a.model || "claude-sonnet-4-5") : "claude-sonnet-4-5", openaiModel: val === "openai" ? (a.openaiModel || "gpt-4o-mini") : "gpt-4o-mini" }))}
                 style={{ flex: 1, background: (ai.provider || "claude") === val ? `linear-gradient(135deg,${t.accent},${t.accent2})` : t.surface2, border: `1px solid ${(ai.provider || "claude") === val ? t.accent : t.border}`, borderRadius: 8, padding: "9px 10px", color: (ai.provider || "claude") === val ? "#fff" : t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 {label}
               </button>
@@ -759,7 +773,7 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
   const applyEstimate = () => {
     if (!result) return;
     const lines = (result.lines || []).map(l => ({ id: Math.random().toString(36).slice(2), description: l.description || "", qty: Number(l.qty) || 1, unit: l.unit || "ls", unitPrice: Number(l.unitPrice) || 0, type: l.type || "labor" }));
-    onApply({ lines, scopeSummary: result.scopeSummary || "", notes: result.notes || "" });
+    onApply({ lines, scopeSummary: typeof result.scopeSummary === 'string' ? result.scopeSummary : "", notes: typeof result.notes === 'string' ? result.notes : "" });
     setOpen(false); setPhase("idle"); setJobDesc(""); setResult(null);
   };
 
@@ -818,7 +832,7 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
             </div>
           </div>
           {result.warnings?.length > 0 && <div style={{ background: "#451a03", border: "1px solid #f59e0b", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#fcd34d", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>⚠️ REVIEW BEFORE SENDING</div>{result.warnings.map((w,i) => <div key={i} style={{ color: "#fde68a", fontSize: 11, marginBottom: 2 }}>• {w}</div>)}</div>}
-          {result.notes && <div style={{ background: "#0f172a", border: "1px solid #1e2d40", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#64748b", fontSize: 10, fontWeight: 700, marginBottom: 3 }}>ASSUMPTIONS & EXCLUSIONS</div><div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6 }}>{result.notes}</div></div>}
+          {result.notes && <div style={{ background: "#0f172a", border: "1px solid #1e2d40", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#64748b", fontSize: 10, fontWeight: 700, marginBottom: 3 }}>ASSUMPTIONS & EXCLUSIONS</div><div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6 }}>{typeof result.notes === 'string' ? result.notes : JSON.stringify(result.notes)}</div></div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={applyEstimate} style={{ flex: 1, background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✅ Apply to Estimate</button>
             <button onClick={() => { setPhase("idle"); setResult(null); }} style={{ background: "#1e2d40", border: "1px solid #334155", borderRadius: 8, padding: "12px 14px", color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>↺ Redo</button>
@@ -1950,19 +1964,28 @@ function Invoices({ data, setData, t, initialFilter }) {
     window.location.href = `https://venmo.com/${h.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number + " — " + inv.customerName)}&amount=${total.toFixed(2)}`;
   };
 
-  // Download PDF as a file — works on mobile without popup blocker issues
+  // Download PDF — opens in new tab on iOS (where <a download> is unreliable),
+  // direct file download on Android/desktop
   const downloadPDF = inv => {
     const cust = data.customers.find(c => c.id === inv.customerId);
     const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
     const blob = new Blob([html], { type: "text/html" });
     const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      // iOS Safari ignores the download attribute on blob URLs;
+      // open in-tab so user can tap Share → Save to Files
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } else {
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
   };
 
   // Open PDF in new tab for printing (desktop fallback)
@@ -2014,8 +2037,8 @@ function Invoices({ data, setData, t, initialFilter }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
           <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
           <div>
-            <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{inv.number}</div>
-            <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{inv.customerName}</h2>
+            <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+            <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</h2>
           </div>
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
             <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
@@ -2037,30 +2060,45 @@ function Invoices({ data, setData, t, initialFilter }) {
           </div>
         </Card>
 
-        {/* ── SEND INVOICE ACTION CENTER ─────────────────────────── */}
-        <Card t={t} style={{ marginBottom: 14, border: `2px solid ${t.accent}55` }}>
-          <SectionLabel t={t}>📤 Send Invoice to Customer</SectionLabel>
-
-          {/* Step 1 — Download PDF */}
-          <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg,${t.accent},${t.accent2})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>1</div>
-              <div><div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Download Invoice + Contract PDF</div><div style={{ color: t.subtext, fontSize: 11 }}>Save file to phone, then share via text or email</div></div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => downloadPDF(inv)} style={{ flex: 1, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Icon d={IC.upload} size={14} color="#fff" /> Download PDF File
-              </button>
-              <button onClick={() => printPDF(inv)} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "11px 14px", color: t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                🖨️ Print
-              </button>
+        {/* ── PROMINENT: Download PDF ──────────────────────────────── */}
+        <Card t={t} style={{ marginBottom: 14, border: `2px solid ${t.accent}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <Icon d={IC.upload} size={20} color={t.accent} />
+            <div>
+              <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Download Invoice + Contract PDF</div>
+              <div style={{ color: t.subtext, fontSize: 11 }}>Save to phone — share via text, email, or AirDrop</div>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => downloadPDF(inv)} style={{ flex: 1, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 10, padding: "14px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Icon d={IC.upload} size={16} color="#fff" /> Download PDF
+            </button>
+            <button onClick={() => printPDF(inv)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "14px 18px", color: t.subtext, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              🖨️
+            </button>
+          </div>
+        </Card>
 
-          {/* Step 2 — Copy share message */}
+        {/* ── PROMINENT: Send via OpenSign ─────────────────────────── */}
+        <Card t={t} style={{ marginBottom: 14, background: "linear-gradient(135deg,#130a1f,#1a0a2e)", border: "2px solid #7c3aed" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 22 }}>✍️</span>
+            <div>
+              <div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>Send via OpenSign™</div>
+              <div style={{ color: "#a78bfa", fontSize: 11 }}>Customer signs in their browser — no account needed</div>
+            </div>
+          </div>
+          <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
+        </Card>
+
+        {/* ── SEND INVOICE ACTION CENTER ─────────────────────────── */}
+        <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
+          <SectionLabel t={t}>📤 More Actions</SectionLabel>
+
+          {/* Copy share message */}
           <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#059669,#047857)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>2</div>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#059669,#047857)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>1</div>
               <div><div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Copy Message to Send Customer</div><div style={{ color: t.subtext, fontSize: 11 }}>Includes invoice #, total, Venmo link, and signing link</div></div>
             </div>
             <button onClick={() => copyShareText(inv)} style={{ width: "100%", background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -2068,22 +2106,10 @@ function Invoices({ data, setData, t, initialFilter }) {
             </button>
           </div>
 
-          {/* Step 3 — E-Signature via OpenSign */}
-          <div style={{ background: t.surface2, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#6d28d9)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>3</div>
-              <div>
-                <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>E-Signature</div>
-                <div style={{ color: t.subtext, fontSize: 11 }}>Send contract for customer to sign</div>
-              </div>
-            </div>
-            <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
-          </div>
-
-          {/* Step 4 — Get paid */}
+          {/* Get paid */}
           <div style={{ background: t.surface2, borderRadius: 10, padding: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: inv.status === "paid" ? "linear-gradient(135deg,#059669,#047857)" : "linear-gradient(135deg,#008CFF,#0070CC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>4</div>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: inv.status === "paid" ? "linear-gradient(135deg,#059669,#047857)" : "linear-gradient(135deg,#008CFF,#0070CC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0 }}>2</div>
               <div>
                 <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Payment</div>
                 <div style={{ color: t.subtext, fontSize: 11 }}>{inv.status === "paid" ? `✅ Paid ${inv.paidAt ? fmtDate(inv.paidAt) : ""}` : `${fmt$(total)} due`}</div>
@@ -2151,7 +2177,7 @@ function Invoices({ data, setData, t, initialFilter }) {
               <Inp t={t} label="Additional Terms" value={ct.additional || ""} onChange={v => upd(inv.id, { contractTerms: { ...ct, additional: v } })} rows={3} />
             </>
           ) : (
-            <div>{[["Payment", ct.paymentSchedule], ["Warranty", ct.warranty], ["Permits", ct.permits], ["Additional", ct.additional]].map(([k, v]) => v ? <div key={k} style={{ marginBottom: 8, padding: "8px 10px", background: t.surface2, borderRadius: 6 }}><span style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>{k}: </span><span style={{ color: t.text, fontSize: 13 }}>{v}</span></div> : null)}{!ct.paymentSchedule && <div style={{ color: t.muted, fontSize: 13 }}>Oregon CCB defaults apply</div>}</div>
+            <div>{[["Payment", ct.paymentSchedule], ["Warranty", ct.warranty], ["Permits", ct.permits], ["Additional", ct.additional]].map(([k, v]) => v && typeof v !== "object" ? <div key={k} style={{ marginBottom: 8, padding: "8px 10px", background: t.surface2, borderRadius: 6 }}><span style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>{k}: </span><span style={{ color: t.text, fontSize: 13 }}>{String(v)}</span></div> : null)}{!ct.paymentSchedule && <div style={{ color: t.muted, fontSize: 13 }}>Oregon CCB defaults apply</div>}</div>
           )}
         </Card>
 
@@ -2203,7 +2229,7 @@ function Invoices({ data, setData, t, initialFilter }) {
           {[
             { n: "1", label: "New Estimate", sub: "Build scope & price", color: "#2563eb", action: null, hint: "→ Go to Estimates tab" },
             { n: "2", label: "→ Invoice",    sub: "Convert estimate",    color: "#059669", action: null, hint: "Open estimate → Convert" },
-            { n: "3", label: "Download PDF", sub: "Save & share file",   color: "#7c3aed", action: () => { if (data.invoices.length > 0) { const inv = data.invoices[data.invoices.length - 1]; setSelected(inv); setEditingContract(false); setView("detail"); } else alert("Create an invoice first."); }, hint: "Opens latest invoice" },
+            { n: "3", label: "Download PDF", sub: "Save & share file",   color: "#7c3aed", action: () => { if (data.invoices.length > 0) { downloadPDF(data.invoices[data.invoices.length - 1]); } else alert("Create an invoice first."); }, hint: "Downloads latest invoice as PDF" },
             { n: "4", label: "Get Paid",     sub: "Venmo or mark paid",  color: "#f97316", action: () => setLocalFilter("unpaid"), hint: "View unpaid invoices" },
           ].map(step => (
             <button key={step.n} onClick={step.action || undefined} title={step.hint}
@@ -2240,9 +2266,9 @@ function Invoices({ data, setData, t, initialFilter }) {
             <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setView("detail"); }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div>
-                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{inv.number}</div>
-                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{inv.customerName}</div>
-                  <div style={{ color: t.subtext, fontSize: 12 }}>{inv.jobTitle} · {fmtDate(inv.date)}</div>
+                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</div>
+                  <div style={{ color: t.subtext, fontSize: 12 }}>{typeof inv.jobTitle === "string" ? inv.jobTitle : String(inv.jobTitle || "")} · {fmtDate(inv.date)}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
