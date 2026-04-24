@@ -450,10 +450,13 @@ function Customers({ data, setData, t }) {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 16, boxSizing: "border-box" }} />
       {filtered.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>👤</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>{search ? "No matching clients" : "No clients yet"}</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add First Client</Btn></Card>
         : filtered.map(c => (
-          <Card key={c.id} t={t} style={{ marginBottom: 10, padding: "14px 16px" }}>
+          <Card key={c.id} t={t} style={{ marginBottom: 10, padding: "14px 16px", cursor: "pointer", transition: "opacity 0.15s" }}
+            onClick={() => open(c)}
+            onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div><div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{c.name}</div><div style={{ color: t.subtext, fontSize: 12, marginTop: 2 }}>{[c.phone, c.city].filter(Boolean).join(" · ")}</div></div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
                 <Btn t={t} size="sm" variant="ghost" onClick={() => open(c)}><Icon d={IC.edit} size={13} /></Btn>
                 <Btn t={t} size="sm" variant="danger" onClick={() => del(c.id)}><Icon d={IC.trash} size={13} /></Btn>
               </div>
@@ -611,7 +614,10 @@ function Jobs({ data, setData, t, initialFilter, goTo }) {
           const cl = job.checklist || [];
           const pct = cl.length ? Math.round(cl.filter(c => c.done).length / cl.length * 100) : null;
           return (
-            <Card key={job.id} t={t} style={{ marginBottom: 10 }}>
+            <Card key={job.id} t={t} style={{ marginBottom: 10, cursor: "pointer", transition: "opacity 0.15s" }}
+              onClick={() => open(job)}
+              onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{job.title}</div>
@@ -631,7 +637,7 @@ function Jobs({ data, setData, t, initialFilter, goTo }) {
                 </div>
                 <Badge status={job.status} />
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
                 <select value={job.status} onChange={e => updateStatus(job.id, e.target.value)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 10px", color: t.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
                   {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
@@ -1067,12 +1073,15 @@ function Estimates({ data, setData, t }) {
       </div>
       {data.estimates.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>📋</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>No estimates yet</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Create First Estimate</Btn></Card>
         : [...data.estimates].reverse().map(est => (
-          <Card key={est.id} t={t} style={{ marginBottom: 10 }}>
+          <Card key={est.id} t={t} style={{ marginBottom: 10, cursor: "pointer", transition: "opacity 0.15s" }}
+            onClick={() => open(est)}
+            onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div><div style={{ color: t.accent, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em" }}>{est.number}</div><div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{est.customerName || "No customer"}</div><div style={{ color: t.subtext, fontSize: 12 }}>{est.jobTitle} · {fmtDate(est.date)}</div></div>
               <div style={{ textAlign: "right" }}><div style={{ color: "#4ade80", fontSize: 18, fontWeight: 800 }}>{fmt$(est.total)}</div><span style={{ background: est.status === "approved" ? "#052e16" : t.muted, color: est.status === "approved" ? "#4ade80" : t.subtext, borderRadius: 20, padding: "2px 8px", fontSize: 11 }}>{est.status}</span></div>
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
               <Btn t={t} size="sm" variant="ghost" onClick={() => open(est)}><Icon d={IC.edit} size={12} /> Edit</Btn>
               <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice</Btn>
               <Btn t={t} size="sm" variant="danger" onClick={() => del(est.id)}><Icon d={IC.trash} size={12} /></Btn>
@@ -2422,7 +2431,10 @@ function Invoices({ data, setData, t, initialFilter }) {
           const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
           const total = sub + sub * (Number(inv.taxRate || 0) / 100);
           return (
-            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setDocModalInv(inv); setShowDocModal(true); }}>
+            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer", transition: "opacity 0.15s" }}
+              onClick={() => { setDocModalInv(inv); setShowDocModal(true); }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div>
                   <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
