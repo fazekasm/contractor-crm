@@ -1,111 +1,184 @@
+/* ─── Contractor CRM Global Styles ─── */
+*, *::before, *::after { box-sizing: border-box; }
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font: 16px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  -webkit-tap-highlight-color: transparent;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+body { margin: 0; overflow-x: hidden; }
+#root { max-width: 100%; min-height: 100svh; text-align: left; }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+/* ─── Focus & Accessibility ─── */
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent, #2563eb) !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  outline: none;
+}
+button:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
 }
 
-body {
-  margin: 0;
+/* ─── Tap / Press Feedback ─── */
+.card-tap {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.15s ease;
+  will-change: transform;
+}
+.card-tap:active {
+  transform: scale(0.985);
+}
+.card-tap:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+/* ─── Button press feedback ─── */
+button {
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ─── Smooth page transitions ─── */
+.page-enter {
+  animation: fadeSlideIn 0.2s ease-out forwards;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Bottom nav transitions ─── */
+.nav-item {
+  transition: color 0.2s ease;
+  position: relative;
+}
+.nav-indicator {
+  transition: width 0.2s ease, opacity 0.2s ease;
+}
+
+/* ─── Search bar ─── */
+.search-wrapper {
+  position: relative;
+}
+.search-wrapper .search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0.4;
+}
+.search-wrapper input {
+  padding-left: 38px !important;
+}
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  opacity: 0.5;
   display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  align-items: center;
+}
+.search-clear:hover { opacity: 1; }
+
+/* ─── Scrollbar styling ─── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.4); }
+
+/* ─── Filter pills horizontal scroll ─── */
+.filter-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.filter-pills::-webkit-scrollbar { display: none; }
+.filter-pill {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.filter-pill:active { transform: scale(0.95); }
+
+/* ─── Floating Action Button ─── */
+.fab {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 15;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.fab:active {
+  transform: scale(0.92);
+}
+.fab:hover {
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.15);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* ─── Empty state ─── */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+}
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  opacity: 0.6;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+/* ─── Stat card number animation ─── */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stat-value {
+  animation: countUp 0.3s ease-out;
+}
+
+/* ─── Safe area for bottom nav ─── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* ─── Print styles ─── */
+@media print {
+  .no-print { display: none !important; }
 }
