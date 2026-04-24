@@ -119,9 +119,46 @@ const getTheme = (themeData) => {
 };
 
 // ─── UI PRIMITIVES ────────────────────────────────────────────────────────────
-const Card = ({ children, style, t, ...rest }) => (
-  <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, ...style }} {...rest}>
+const Card = ({ children, style, t, className, ...rest }) => (
+  <div className={`card-tap ${className || ""}`} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, ...style }} {...rest}>
     {children}
+  </div>
+);
+
+const SearchBar = ({ value, onChange, placeholder, t }) => (
+  <div className="search-wrapper" style={{ marginBottom: 16 }}>
+    <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.subtext} strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder || "Search..."}
+      style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px", paddingLeft: 38, color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s" }} />
+    {value && (
+      <button className="search-clear" onClick={() => onChange("")} style={{ color: t.subtext }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    )}
+  </div>
+);
+
+const PageHeader = ({ title, count, action, t, back }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      {back && <Btn t={t} variant="ghost" size="sm" onClick={back}><Icon d={IC.back} size={14} /></Btn>}
+      <div>
+        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>{title}</h2>
+        {count !== undefined && <div style={{ color: t.subtext, fontSize: 12, marginTop: 1 }}>{count} total</div>}
+      </div>
+    </div>
+    {action}
+  </div>
+);
+
+const EmptyState = ({ icon, title, subtitle, action, t }) => (
+  <div className="empty-state">
+    <div className="empty-state-icon" style={{ background: `${t.accent}15` }}>
+      <Icon d={IC[icon] || IC.file} size={28} color={t.accent} />
+    </div>
+    <div style={{ color: t.text, fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{title}</div>
+    <div style={{ color: t.subtext, fontSize: 13, marginBottom: 16, maxWidth: 280, margin: "0 auto 16px" }}>{subtitle}</div>
+    {action}
   </div>
 );
 
@@ -145,10 +182,10 @@ const Btn = ({ children, onClick, variant = "primary", size = "md", style, disab
 
 const Inp = ({ label, value, onChange, type = "text", placeholder, required, rows, t }) => (
   <div style={{ marginBottom: 14 }}>
-    {label && <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>{label}{required && <span style={{ color: "#ef4444" }}> *</span>}</label>}
+    {label && <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5, fontWeight: 600 }}>{label}{required && <span style={{ color: "#ef4444" }}> *</span>}</label>}
     {rows
-      ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" }} />
-      : <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", transition: "border-color 0.15s, box-shadow 0.15s" }} />
+      : <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s" }} />
     }
   </div>
 );
@@ -329,45 +366,29 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
     { label: "Awaiting Sig", value: unsigned,          color: "#a78bfa", sub: "Tap to view unsigned invoices",  onClick: () => goInvoices("unsigned") },
   ];
 
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
   return (
-    <div>
+    <div className="page-enter">
       <div style={{ marginBottom: 24 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: "0 0 4px" }}>Dashboard</h2>
+        <div style={{ color: t.subtext, fontSize: 13, marginBottom: 2 }}>{greeting}</div>
+        <h2 style={{ color: t.text, fontSize: 24, fontWeight: 800, margin: "0 0 4px" }}>Dashboard</h2>
         <div style={{ color: t.subtext, fontSize: 13 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
         {statCards.map(s => (
-          <button key={s.label} onClick={s.onClick}
-            style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, textAlign: "left", cursor: "pointer", fontFamily: "inherit", transition: "border-color 0.15s", borderColor: t.border }}
+          <button key={s.label} onClick={s.onClick} className="card-tap"
+            style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => e.currentTarget.style.borderColor = s.color}
             onMouseLeave={e => e.currentTarget.style.borderColor = t.border}>
-            <div style={{ color: s.color, fontSize: 26, fontWeight: 800 }}>{s.value}</div>
+            <div className="stat-value" style={{ color: s.color, fontSize: 26, fontWeight: 800 }}>{s.value}</div>
             <div style={{ color: t.text, fontSize: 12, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
             <div style={{ color: t.subtext, fontSize: 10, marginTop: 2 }}>{s.sub}</div>
           </button>
         ))}
       </div>
-
-      {/* Quick Actions */}
-      <Card t={t} style={{ marginBottom: 16 }}>
-        <SectionLabel t={t}>Quick Actions</SectionLabel>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            { label: "+ New Estimate", color: t.accent,   tab: "estimates" },
-            { label: "+ New Invoice",  color: "#059669",  tab: "invoices"  },
-            { label: "+ New Client",   color: "#06b6d4",  tab: "customers" },
-            { label: "+ New Job",      color: "#f59e0b",  tab: "jobs"      },
-          ].map(btn => (
-            <button key={btn.label} onClick={() => setTab(btn.tab)}
-              style={{ background: t.surface2, border: `1px solid ${btn.color}55`, borderRadius: 12, padding: "14px 8px", color: btn.color, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", minHeight: 48, transition: "border-color 0.15s" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = btn.color}
-              onMouseLeave={e => e.currentTarget.style.borderColor = btn.color + "55"}>
-              {btn.label}
-            </button>
-          ))}
-        </div>
-      </Card>
 
       <Card t={t} style={{ marginBottom: 16 }}>
         <SectionLabel t={t}>Pipeline — Tap any stage to filter jobs</SectionLabel>
@@ -420,11 +441,8 @@ function Customers({ data, setData, t }) {
   const filtered = data.customers.filter(c => c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase()));
 
   if (view === "form") return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Clients</Btn>
-        <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? "Edit" : "New"} Customer</h2>
-      </div>
+    <div className="page-enter">
+      <PageHeader title={selected ? "Edit Client" : "New Client"} t={t} back={() => setView("list")} />
       <Card t={t}>
         <Inp t={t} label="Full Name" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required />
         <Inp t={t} label="Phone" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} type="tel" />
@@ -436,39 +454,49 @@ function Customers({ data, setData, t }) {
           <Inp t={t} label="ZIP" value={form.zip} onChange={v => setForm(f => ({ ...f, zip: v }))} />
         </div>
         <Inp t={t} label="Notes" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} rows={3} />
-        <div style={{ display: "flex", gap: 10 }}><Btn t={t} onClick={save}><Icon d={IC.check} size={14} /> Save</Btn><Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn></div>
+        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          <Btn t={t} onClick={save} style={{ flex: 1, justifyContent: "center" }}><Icon d={IC.check} size={14} /> Save Client</Btn>
+          <Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn>
+        </div>
       </Card>
     </div>
   );
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Customers ({data.customers.length})</h2>
-        <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add</Btn>
-      </div>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 16, boxSizing: "border-box" }} />
-      {filtered.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>👤</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>{search ? "No matching clients" : "No clients yet"}</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add First Client</Btn></Card>
+    <div className="page-enter">
+      <PageHeader title="Clients" count={data.customers.length} t={t}
+        action={<Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add</Btn>} />
+      <SearchBar value={search} onChange={setSearch} placeholder="Search clients..." t={t} />
+      {filtered.length === 0
+        ? <Card t={t}><EmptyState icon="users" title={search ? "No matches" : "No clients yet"} subtitle={search ? "Try a different search term" : "Add your first client to get started"} t={t} action={!search && <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={13} /> Add First Client</Btn>} /></Card>
         : filtered.map(c => (
-          <Card key={c.id} t={t} style={{ marginBottom: 10, padding: "14px 16px", cursor: "pointer", transition: "opacity 0.15s" }}
-            onClick={() => open(c)}
-            onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
-            onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+          <Card key={c.id} t={t} style={{ marginBottom: 10, padding: "14px 16px", cursor: "pointer" }} onClick={() => open(c)}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{c.name}</div><div style={{ color: t.subtext, fontSize: 12, marginTop: 2 }}>{[c.phone, c.city].filter(Boolean).join(" · ")}</div></div>
-              <div style={{ display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
-                <Btn t={t} size="sm" variant="ghost" onClick={() => open(c)}><Icon d={IC.edit} size={13} /></Btn>
-                <Btn t={t} size="sm" variant="danger" onClick={() => del(c.id)}><Icon d={IC.trash} size={13} /></Btn>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: `${t.accent}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ color: t.accent, fontSize: 16, fontWeight: 700 }}>{c.name?.charAt(0)?.toUpperCase()}</span>
+                </div>
+                <div>
+                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{c.name}</div>
+                  <div style={{ color: t.subtext, fontSize: 12, marginTop: 2 }}>{[c.phone, c.email, c.city].filter(Boolean).join(" · ")}</div>
+                </div>
               </div>
+              <Icon d={IC.edit} size={16} color={t.muted} />
             </div>
           </Card>
         ))}
+      {/* FAB for adding */}
+      {data.customers.length > 3 && (
+        <button className="fab" onClick={() => open(null)} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})` }}>
+          <Icon d={IC.plus} size={22} color="#fff" />
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── JOBS ─────────────────────────────────────────────────────────────────────
-function Jobs({ data, setData, t, initialFilter, goTo }) {
+function Jobs({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ title: "", customerId: "", customerName: "", address: "", status: "lead", date: today(), value: "", notes: "", checklist: [] });
@@ -496,7 +524,7 @@ function Jobs({ data, setData, t, initialFilter, goTo }) {
   if (view === "form") return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Jobs</Btn>
+        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? "Edit" : "New"} Job</h2>
       </div>
       <Card t={t} style={{ marginBottom: 14 }}>
@@ -539,85 +567,33 @@ function Jobs({ data, setData, t, initialFilter, goTo }) {
           <Btn t={t} size="sm" onClick={addCheckItem}><Icon d={IC.plus} size={13} /></Btn>
         </div>
       </Card>
-      {/* Related invoices & estimates */}
-      {selected && (() => {
-        const relInvoices = data.invoices.filter(i =>
-          (form.customerId && i.customerId === form.customerId) ||
-          (form.customerName && i.customerName === form.customerName)
-        );
-        const relEstimates = data.estimates.filter(e =>
-          (form.customerId && e.customerId === form.customerId) ||
-          (form.customerName && e.customerName === form.customerName)
-        );
-        if (relInvoices.length === 0 && relEstimates.length === 0) return null;
-        return (
-          <Card t={t} style={{ marginBottom: 14 }}>
-            <SectionLabel t={t}>Related Documents</SectionLabel>
-            {relInvoices.map(inv => {
-              const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-              const total = sub + sub * (Number(inv.taxRate || 0) / 100);
-              return (
-                <button key={inv.id} onClick={() => goTo && goTo("invoices")}
-                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                  <div>
-                    <div style={{ color: t.accent, fontSize: 11, fontWeight: 700 }}>{inv.number}</div>
-                    <div style={{ color: t.text, fontSize: 13 }}>{inv.jobTitle || inv.customerName}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 14, fontWeight: 700 }}>{fmt$(total)}</div>
-                    <div style={{ color: t.subtext, fontSize: 10 }}>View Invoice →</div>
-                  </div>
-                </button>
-              );
-            })}
-            {relEstimates.map(est => (
-              <button key={est.id} onClick={() => goTo && goTo("estimates")}
-                style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                <div>
-                  <div style={{ color: t.accent, fontSize: 11, fontWeight: 700 }}>{est.number}</div>
-                  <div style={{ color: t.text, fontSize: 13 }}>{est.jobTitle || est.customerName}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ color: "#4ade80", fontSize: 14, fontWeight: 700 }}>{fmt$(est.total)}</div>
-                  <div style={{ color: t.subtext, fontSize: 10 }}>View Estimate →</div>
-                </div>
-              </button>
-            ))}
-          </Card>
-        );
-      })()}
       <div style={{ display: "flex", gap: 10 }}><Btn t={t} onClick={save}><Icon d={IC.check} size={14} /> Save</Btn><Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn></div>
     </div>
   );
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Jobs</h2>
-        <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> New</Btn>
+    <div className="page-enter">
+      <PageHeader title="Jobs" count={data.jobs.length} t={t}
+        action={<Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> New</Btn>} />
+      <div className="filter-pills" style={{ marginBottom: 16 }}>
+        {[{ value: "all", label: "All" }, ...STATUSES].map(s => {
+          const key = s.value || s.key;
+          const active = filter === key;
+          return (
+            <button key={key} className="filter-pill" onClick={() => setFilter(key)}
+              style={{ background: active ? `${s.color || t.accent}22` : t.surface, border: `1px solid ${active ? (s.color || t.accent) : t.border}`, color: active ? (s.color || t.accent) : t.subtext }}>
+              {s.label}
+            </button>
+          );
+        })}
       </div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>
-        {[{ value: "all", label: "All" }, ...STATUSES].map(s => (
-          <button key={s.value || s.key} onClick={() => setFilter(s.value || s.key)} style={{ background: filter === (s.value || s.key) ? t.muted : t.surface, border: `1px solid ${filter === (s.value || s.key) ? t.accent : t.border}`, color: filter === (s.value || s.key) ? t.accent : t.subtext, borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{s.label}</button>
-        ))}
-      </div>
-      {filtered.length === 0 ? (
-        <Card t={t} style={{ textAlign: "center", padding: 40 }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>🔨</div>
-          <div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>{filter === "all" ? "No jobs yet" : `No ${filter} jobs`}</div>
-          {filter === "all"
-            ? <Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Create First Job</Btn>
-            : <button onClick={() => setFilter("all")} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 16px", color: t.subtext, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Show All Jobs</button>
-          }
-        </Card>
-      ) : filtered.map(job => {
+      {filtered.length === 0
+        ? <Card t={t}><EmptyState icon="tag" title={filter !== "all" ? `No ${statusFor(filter).label} jobs` : "No jobs yet"} subtitle={filter !== "all" ? "Try a different filter" : "Create your first job to track progress"} t={t} action={filter === "all" && <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={13} /> Create Job</Btn>} /></Card>
+        : filtered.map(job => {
           const cl = job.checklist || [];
           const pct = cl.length ? Math.round(cl.filter(c => c.done).length / cl.length * 100) : null;
           return (
-            <Card key={job.id} t={t} style={{ marginBottom: 10, cursor: "pointer", transition: "opacity 0.15s" }}
-              onClick={() => open(job)}
-              onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
-              onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+            <Card key={job.id} t={t} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{job.title}</div>
@@ -637,7 +613,7 @@ function Jobs({ data, setData, t, initialFilter, goTo }) {
                 </div>
                 <Badge status={job.status} />
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <select value={job.status} onChange={e => updateStatus(job.id, e.target.value)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 10px", color: t.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
                   {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
@@ -1009,7 +985,7 @@ function Estimates({ data, setData, t }) {
   if (view === "form" && form) return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Estimates</Btn>
+        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? form.number : "New Estimate"}</h2>
       </div>
       <AIEstimatePanel
@@ -1066,24 +1042,20 @@ function Estimates({ data, setData, t }) {
   );
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Estimates</h2>
-        <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> New</Btn>
-      </div>
-      {data.estimates.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>📋</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>No estimates yet</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Create First Estimate</Btn></Card>
+    <div className="page-enter">
+      <PageHeader title="Estimates" count={data.estimates.length} t={t}
+        action={<Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> New</Btn>} />
+      {data.estimates.length === 0
+        ? <Card t={t}><EmptyState icon="file" title="No estimates yet" subtitle="Create an estimate and convert it to an invoice when approved" t={t} action={<Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={13} /> Create First</Btn>} /></Card>
         : [...data.estimates].reverse().map(est => (
-          <Card key={est.id} t={t} style={{ marginBottom: 10, cursor: "pointer", transition: "opacity 0.15s" }}
-            onClick={() => open(est)}
-            onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
-            onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+          <Card key={est.id} t={t} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div><div style={{ color: t.accent, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em" }}>{est.number}</div><div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{est.customerName || "No customer"}</div><div style={{ color: t.subtext, fontSize: 12 }}>{est.jobTitle} · {fmtDate(est.date)}</div></div>
               <div style={{ textAlign: "right" }}><div style={{ color: "#4ade80", fontSize: 18, fontWeight: 800 }}>{fmt$(est.total)}</div><span style={{ background: est.status === "approved" ? "#052e16" : t.muted, color: est.status === "approved" ? "#4ade80" : t.subtext, borderRadius: 20, padding: "2px 8px", fontSize: 11 }}>{est.status}</span></div>
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Btn t={t} size="sm" variant="ghost" onClick={() => open(est)}><Icon d={IC.edit} size={12} /> Edit</Btn>
-              <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice</Btn>
+              {est.status !== "approved" && <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice+Contract</Btn>}
               <Btn t={t} size="sm" variant="danger" onClick={() => del(est.id)}><Icon d={IC.trash} size={12} /></Btn>
             </div>
           </Card>
@@ -1976,80 +1948,12 @@ function OpenSignSettings({ data, setData, t }) {
     </div>
   );
 }
-// ─── INVOICE DOCUMENT PREVIEW MODAL ──────────────────────────────────────────
-function InvoiceDocModal({ inv, data, upd, t, onClose, downloadPDF, onViewDetails }) {
-  const [showSign, setShowSign] = useState(false);
-  const cust  = data.customers.find(c => c.id === inv.customerId);
-  const co    = data.company || {};
-  const html  = buildContractHTML(inv, cust, co, inv.contractTerms || {}, co.logo || "");
-  const sub   = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-  const total = sub + sub * (Number(inv.taxRate || 0) / 100);
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", background: "#0a0a16" }}>
-
-      {/* ── Top toolbar ─────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#111126", borderBottom: "1px solid #2a2a4a", flexShrink: 0, minHeight: 56 }}>
-        <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "1px solid #3a3a6a", borderRadius: 8, color: "#a0a0c8", fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "6px 10px", flexShrink: 0 }}>✕</button>
-        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-          <div style={{ color: "#a78bfa", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{String(inv.number || "")}</div>
-          <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {String(inv.customerName || "")}
-            <span style={{ color: total > 0 && inv.status === "paid" ? "#4ade80" : "#f97316", fontWeight: 800, marginLeft: 8 }}>
-              {fmt$(total)} {inv.status === "paid" ? "· PAID" : "· UNPAID"}
-            </span>
-          </div>
-        </div>
-        {onViewDetails && (
-          <button onClick={onViewDetails} style={{ background: "#1a1a3a", border: "1px solid #3a3a6a", borderRadius: 8, padding: "7px 11px", color: "#a0a0d0", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
-            ⋮ Details
-          </button>
-        )}
-        <button onClick={() => downloadPDF(inv)} style={{ background: "#1a1a3a", border: "1px solid #3a3a6a", borderRadius: 8, padding: "7px 11px", color: "#a0a0d0", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
-          ⬇ PDF
-        </button>
-        <button onClick={() => setShowSign(s => !s)} style={{ background: showSign ? "#7c3aed" : "linear-gradient(135deg,#6d28d9,#7c3aed)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
-          ✍️ Send to Sign
-        </button>
-      </div>
-
-      {/* ── OpenSign slide-down panel ────────────────────────────────────── */}
-      {showSign && (
-        <div style={{ padding: "14px 14px 0", background: "linear-gradient(135deg,#130a1f,#1a0a2e)", borderBottom: "2px solid #7c3aed", flexShrink: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 20 }}>✍️</span>
-              <div>
-                <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700 }}>Send via OpenSign™</div>
-                <div style={{ color: "#a78bfa", fontSize: 11 }}>Customer signs in their browser — no account needed</div>
-              </div>
-            </div>
-            <button onClick={() => setShowSign(false)} style={{ background: "transparent", border: "none", color: "#a78bfa", fontSize: 20, cursor: "pointer", padding: "4px 8px", lineHeight: 1, fontFamily: "inherit" }}>✕</button>
-          </div>
-          <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
-          <div style={{ height: 14 }} />
-        </div>
-      )}
-
-      {/* ── Document iframe ──────────────────────────────────────────────── */}
-      <iframe
-        srcDoc={html}
-        title={`Invoice ${String(inv.number || "")}`}
-        style={{ flex: 1, border: "none", width: "100%", display: "block", background: "#fff" }}
-        sandbox="allow-same-origin allow-scripts"
-      />
-    </div>
-  );
-}
-
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
 function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showDocModal, setShowDocModal] = useState(false);
-  const [docModalInv, setDocModalInv]   = useState(null);
   const photoRef = useRef();
 
   const upd = (id, patch) => setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === id ? { ...i, ...patch } : i) }));
@@ -2136,13 +2040,8 @@ function Invoices({ data, setData, t, initialFilter }) {
 
     return (
       <div>
-        {showDocModal && docModalInv && (
-          <InvoiceDocModal inv={docModalInv} data={data} upd={upd} t={t}
-            onClose={() => setShowDocModal(false)}
-            downloadPDF={downloadPDF} />
-        )}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-          <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Invoices</Btn>
+          <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
           <div>
             <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
             <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</h2>
@@ -2152,11 +2051,6 @@ function Invoices({ data, setData, t, initialFilter }) {
             <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span>
           </div>
         </div>
-
-        {/* ── Document preview ────────────────────────────────── */}
-        <button onClick={() => { setDocModalInv(inv); setShowDocModal(true); }} style={{ width: "100%", background: "linear-gradient(135deg,#1a0a2e,#0d0720)", border: "2px solid #7c3aed", borderRadius: 12, padding: "14px 16px", color: "#a78bfa", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 14, fontFamily: "inherit" }}>
-          <span style={{ fontSize: 20 }}>📄</span> Preview Invoice Document
-        </button>
 
         {/* Status badges */}
         <Card t={t} style={{ marginBottom: 14, padding: 16 }}>
@@ -2318,90 +2212,19 @@ function Invoices({ data, setData, t, initialFilter }) {
   ];
 
   return (
-    <div>
-      {showDocModal && docModalInv && (
-        <InvoiceDocModal inv={docModalInv} data={data} upd={upd} t={t}
-          onClose={() => setShowDocModal(false)}
-          downloadPDF={downloadPDF}
-          onViewDetails={() => { setSelected(docModalInv); setEditingContract(false); setView("detail"); setShowDocModal(false); }} />
-      )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Invoices + Contracts</h2>
-      </div>
+    <div className="page-enter">
+      <PageHeader title="Invoices" count={data.invoices.length} t={t} />
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+      <div className="filter-pills" style={{ marginBottom: 16 }}>
         {INVOICE_FILTERS.map(f => (
-          <button key={f.key} onClick={() => setLocalFilter(f.key)}
+          <button key={f.key} className="filter-pill" onClick={() => setLocalFilter(f.key)}
             style={{ background: localFilter === f.key ? t.muted : t.surface, border: `1px solid ${localFilter === f.key ? t.accent : t.border}`, borderRadius: 20, padding: "6px 14px", color: localFilter === f.key ? t.accent : t.subtext, fontSize: 12, fontWeight: localFilter === f.key ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}>
             {f.label}
             <span style={{ background: localFilter === f.key ? t.accent : t.border, color: localFilter === f.key ? "#fff" : t.subtext, borderRadius: 20, padding: "0px 6px", fontSize: 10, fontWeight: 700 }}>{f.count}</span>
           </button>
         ))}
       </div>
-
-      {/* Invoice list — immediately below filter tabs */}
-      {displayedInvoices.length === 0 ? (
-        <Card t={t} style={{ textAlign: "center", padding: 40 }}>
-          <div style={{ color: t.subtext, marginBottom: 8 }}>
-            {data.invoices.length === 0 ? "No invoices yet — convert an estimate to create one" : `No ${localFilter === "all" ? "" : localFilter} invoices`}
-          </div>
-          {localFilter !== "all" && (
-            <button onClick={() => setLocalFilter("all")} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 16px", color: t.subtext, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Show All Invoices</button>
-          )}
-        </Card>
-      ) : displayedInvoices.map(inv => {
-          const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-          const total = sub + sub * (Number(inv.taxRate || 0) / 100);
-          return (
-            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer", transition: "opacity 0.15s" }}
-              onClick={() => { setDocModalInv(inv); setShowDocModal(true); }}
-              onMouseEnter={e => e.currentTarget.style.opacity = "0.88"}
-              onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <div>
-                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
-                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</div>
-                  <div style={{ color: t.subtext, fontSize: 12 }}>{typeof inv.jobTitle === "string" ? inv.jobTitle : String(inv.jobTitle || "")} · {fmtDate(inv.date)}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
-                  <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
-                    {inv.status === "paid" ? "✓ PAID" : "UNPAID"}
-                  </span>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
-                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Sent" : "✍️ Unsigned"}
-                </div>
-                {(inv.photos || []).length > 0 && (
-                  <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length}</div>
-                )}
-                <div style={{ marginLeft: "auto", color: t.muted, fontSize: 10 }}>tap to preview</div>
-              </div>
-              {/* Contextual action chips */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
-                {inv.status !== "paid" && !inv.signedAt && (
-                  <button onClick={e => { e.stopPropagation(); setDocModalInv(inv); setShowDocModal(true); }}
-                    style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#a78bfa", cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
-                    ✍️ Send to Sign
-                  </button>
-                )}
-                {inv.status !== "paid" && (
-                  <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }}
-                    style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#4ade80", cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
-                    ✅ Mark Paid
-                  </button>
-                )}
-                <button onClick={e => { e.stopPropagation(); downloadPDF(inv); }}
-                  style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: t.subtext, cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
-                  ⬇ {inv.status === "paid" ? "Receipt" : "Download"}
-                </button>
-              </div>
-            </Card>
-          );
-        })}
 
       {/* Workflow — each step is a real action button */}
       <Card t={t} style={{ marginBottom: 16, border: `1px solid #4c1d95` }}>
@@ -2430,6 +2253,46 @@ function Invoices({ data, setData, t, initialFilter }) {
         <SectionLabel t={t}>📊 Accounting Exports</SectionLabel>
         <AccountingExports data={data} t={t} />
       </Card>
+
+      {displayedInvoices.length === 0 ? (
+        <Card t={t} style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ color: t.subtext, marginBottom: 8 }}>
+            {data.invoices.length === 0 ? "No invoices yet — convert an estimate to create one" : `No ${localFilter === "all" ? "" : localFilter} invoices`}
+          </div>
+          {localFilter !== "all" && (
+            <button onClick={() => setLocalFilter("all")} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 16px", color: t.subtext, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Show All Invoices</button>
+          )}
+        </Card>
+      ) : displayedInvoices.map(inv => {
+          const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+          const total = sub + sub * (Number(inv.taxRate || 0) / 100);
+          return (
+            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setView("detail"); }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+                  <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</div>
+                  <div style={{ color: t.subtext, fontSize: 12 }}>{typeof inv.jobTitle === "string" ? inv.jobTitle : String(inv.jobTitle || "")} · {fmtDate(inv.date)}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
+                  <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                    {inv.status === "paid" ? "✓ PAID" : "UNPAID"}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
+                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Signature"}
+                </div>
+                {(inv.photos || []).length > 0 && (
+                  <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photo{inv.photos.length !== 1 ? "s" : ""}</div>
+                )}
+                <div style={{ marginLeft: "auto", color: t.subtext, fontSize: 11, alignSelf: "center" }}>Tap to open →</div>
+              </div>
+            </Card>
+          );
+        })}
     </div>
   );
 }
@@ -2458,9 +2321,9 @@ function Calendar({ data, setData, t, setTab }) {
   const dayJobs = selectedDay ? (jobsByDay[selectedDay] || []) : [];
 
   return (
-    <div>
+    <div className="page-enter">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Calendar</h2>
+        <h2 style={{ color: t.text, fontSize: 24, fontWeight: 800, margin: 0 }}>Calendar</h2>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Btn t={t} variant="ghost" size="sm" onClick={() => setCur(new Date(year, month - 1, 1))}>‹</Btn>
           <span style={{ color: t.text, fontSize: 14, fontWeight: 600, minWidth: 140, textAlign: "center" }}>{monthName}</span>
@@ -2599,8 +2462,8 @@ function Settings({ data, setData, t }) {
   ];
 
   return (
-    <div>
-      <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: "0 0 20px" }}>Settings</h2>
+    <div className="page-enter">
+      <h2 style={{ color: t.text, fontSize: 24, fontWeight: 800, margin: "0 0 20px" }}>Settings</h2>
 
       {/* Company Info */}
       <Card t={t} style={{ marginBottom: 16 }}>
@@ -2830,7 +2693,7 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: t.bg, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
-      <div style={{ background: t.surface, borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20 }}>
+      <div style={{ borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", backgroundColor: `${t.surface}ee` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {data.company.logo
             ? <img src={data.company.logo} style={{ height: 36, maxWidth: 100, objectFit: "contain" }} />
@@ -2861,10 +2724,10 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 110px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 100px" }}>
         {tab === "dashboard" && <Dashboard data={data} t={t} setTab={goTo} setInvoiceFilter={f => setInvoiceFilter(f)} setJobFilter={f => setJobFilter(f)} />}
         {tab === "customers" && <Customers data={data} setData={setData} t={t} />}
-        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} goTo={goTo} />}
+        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} />}
         {tab === "estimates" && <Estimates data={data} setData={setData} t={t} />}
         {tab === "invoices"  && <Invoices data={data} setData={setData} t={t} initialFilter={invoiceFilter} />}
         {tab === "calendar"  && <Calendar data={data} setData={setData} t={t} setTab={id => goTo(id)} />}
@@ -2872,15 +2735,24 @@ export default function App() {
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: t.surface, borderTop: `1px solid ${t.border}`, display: "flex", zIndex: 20, paddingBottom: "env(safe-area-inset-bottom)" }}>
-        {tabs.map(tb => (
-          <button key={tb.id} onClick={() => goTo(tb.id)}
-            style={{ flex: 1, background: "none", border: "none", padding: "8px 2px 6px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: tab === tb.id ? t.accent : t.muted, transition: "color 0.15s", fontFamily: "inherit" }}>
-            <Icon d={IC[tb.icon]} size={18} color={tab === tb.id ? t.accent : t.muted} />
-            <span style={{ fontSize: 9, fontWeight: tab === tb.id ? 700 : 500, letterSpacing: "0.02em" }}>{tb.label}</span>
-            {tab === tb.id && <div style={{ width: 16, height: 2, background: t.accent, borderRadius: 1 }} />}
-          </button>
-        ))}
+      <div className="bottom-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: t.surface, borderTop: `1px solid ${t.border}`, display: "flex", zIndex: 20, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", backgroundColor: `${t.surface}ee` }}>
+        {tabs.map(tb => {
+          const isActive = tab === tb.id;
+          const badgeCount = tb.id === "invoices" ? unpaid : 0;
+          return (
+            <button key={tb.id} onClick={() => goTo(tb.id)} className="nav-item"
+              style={{ flex: 1, background: "none", border: "none", padding: "10px 2px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: isActive ? t.accent : t.muted, fontFamily: "inherit", position: "relative" }}>
+              <div style={{ position: "relative" }}>
+                <Icon d={IC[tb.icon]} size={20} color={isActive ? t.accent : t.muted} />
+                {badgeCount > 0 && (
+                  <div style={{ position: "absolute", top: -4, right: -8, background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 8, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{badgeCount}</div>
+                )}
+              </div>
+              <span style={{ fontSize: 10, fontWeight: isActive ? 700 : 500, letterSpacing: "0.02em" }}>{tb.label}</span>
+              <div className="nav-indicator" style={{ width: isActive ? 20 : 0, height: 2.5, background: t.accent, borderRadius: 2, opacity: isActive ? 1 : 0 }} />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
