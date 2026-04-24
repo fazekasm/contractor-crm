@@ -1591,8 +1591,6 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const aiCfg    = data.aiConfig   || {};
   const openCfg   = data.openSignConfig || {};
-  const apiKey    = openCfg.apiKey    || "";
-  const proxyUrl  = openCfg.proxyUrl  || "";
   const backendUrl = (openCfg.backendUrl || "").replace(/\/$/, "");
   const cust      = data.customers.find(c => c.id === inv.customerId);
 
@@ -1601,8 +1599,7 @@ function OpenSignSend({ inv, data, upd, t }) {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
   }, [cust]);
 
-  // Configured if we have a backend URL (new flow) OR legacy proxyUrl + apiKey
-  const isConfigured = !!backendUrl || (apiKey && proxyUrl);
+  const isConfigured = !!backendUrl;
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
 
@@ -1704,55 +1701,39 @@ function OpenSignSend({ inv, data, upd, t }) {
       let opensignDocId = "";
       let backendDocId = "";
 
-      if (backendUrl) {
-        // ── New flow: call contractor-crm-backend ──────────────────
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) throw new Error("Not signed in — please refresh and sign in again.");
+      // ── Call contractor-crm-backend ──────────────────
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not signed in — please refresh and sign in again.");
 
-        const res = await fetch(`${backendUrl}/api/opensign/send`, {
-          method:  "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            documentType: "invoice",
-            title:        docTitle,
-            note:         payload.note,
-            pdfBase64:    base64File,
-            signers: [{
-              name:  signerName || inv.customerName,
-              email: signerEmail.trim(),
-              phone: cust?.phone || "",
-              role:  "customer",
-            }],
-            expiresInDays: 30,
-          }),
-        });
+      const res = await fetch(`${backendUrl}/api/opensign/send`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          documentType: "invoice",
+          title:        docTitle,
+          note:         payload.note,
+          pdfBase64:    base64File,
+          signers: [{
+            name:  signerName || inv.customerName,
+            email: signerEmail.trim(),
+            phone: cust?.phone || "",
+            role:  "customer",
+          }],
+          expiresInDays: 30,
+        }),
+      });
 
-        const json = await res.json();
-        if (!res.ok || json.error) {
-          throw new Error(json.error || json.message || `Backend error: ${res.status}`);
-        }
-
-        signingUrl   = json.signingUrl || "";
-        opensignDocId = json.opensignDocId || "";
-        backendDocId  = json.documentId   || "";
-
-      } else {
-        // ── Legacy flow: Cloudflare Worker proxy ───────────────────
-        const res = await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/createdocument`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json", "x-api-token": apiKey },
-          body:    JSON.stringify(payload),
-        });
-        const json = await res.json();
-        if (!res.ok || json.error) {
-          throw new Error(json.error?.message || json.message || `OpenSign error: ${res.status}`);
-        }
-        signingUrl    = json.signers?.[0]?.url || json.data?.signers?.[0]?.url || json.url || "";
-        opensignDocId = json.objectId || json._id || json.id || "";
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
       }
+
+      signingUrl   = json.signingUrl || "";
+      opensignDocId = json.opensignDocId || "";
+      backendDocId  = json.documentId   || "";
 
       // Save to invoice
       upd(inv.id, {
@@ -1920,14 +1901,11 @@ function OpenSignSend({ inv, data, upd, t }) {
 function OpenSignSettings({ data, setData, t }) {
   const cfg = data.openSignConfig || {};
   const [form, setForm] = useState({
-    apiKey:     cfg.apiKey     || "",
-    proxyUrl:   cfg.proxyUrl   || "",
     backendUrl: cfg.backendUrl || "",
   });
   const [saved, setSaved]     = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [showKey, setShowKey] = useState(false);
 
   const save = () => {
     setData(d => ({ ...d, openSignConfig: form }));
@@ -1937,29 +1915,17 @@ function OpenSignSettings({ data, setData, t }) {
 
   const testConnection = async () => {
     const backendUrl = (form.backendUrl || "").replace(/\/$/, "");
-    if (!backendUrl && (!form.apiKey || !form.proxyUrl)) {
-      setTestResult({ ok: false, msg: "Fill in Backend URL (or legacy API key + Worker URL)." });
+    if (!backendUrl) {
+      setTestResult({ ok: false, msg: "Enter your Backend URL first." });
       return;
     }
     setTesting(true); setTestResult(null);
     try {
-      if (backendUrl) {
-        const res = await fetch(`${backendUrl}/health`);
-        if (res.ok) {
-          setTestResult({ ok: true, msg: "✅ Backend reachable — ready to send documents." });
-        } else {
-          setTestResult({ ok: false, msg: `❌ Backend returned ${res.status}. Check the URL.` });
-        }
+      const res = await fetch(`${backendUrl}/health`);
+      if (res.ok) {
+        setTestResult({ ok: true, msg: "✅ Backend reachable — ready to send documents." });
       } else {
-        const res = await fetch(`${form.proxyUrl.replace(/\/$/, "")}/opensign/getuser`, {
-          headers: { "x-api-token": form.apiKey },
-        });
-        const d = await res.json();
-        if (res.ok && (d.name || d.email || d.objectId)) {
-          setTestResult({ ok: true, msg: `✅ Connected as: ${d.name || d.email || "OpenSign user"}` });
-        } else {
-          setTestResult({ ok: false, msg: `❌ ${d.error || d.message || "Invalid API key"}` });
-        }
+        setTestResult({ ok: false, msg: `❌ Backend returned ${res.status}. Check the URL.` });
       }
     } catch (e) {
       setTestResult({ ok: false, msg: `❌ ${e.message}` });
@@ -1991,26 +1957,10 @@ function OpenSignSettings({ data, setData, t }) {
         />
       </div>
 
-      {/* Legacy API key (shown collapsed if backendUrl set) */}
-      {!form.backendUrl && (
-        <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-          <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Legacy: OpenSign API Key</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type={showKey ? "text" : "password"} value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
-              placeholder="Your OpenSign API token..."
-              style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-            <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 12px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
-          </div>
-          <input value={form.proxyUrl} onChange={e => setForm(f => ({ ...f, proxyUrl: e.target.value }))}
-            placeholder="https://opensign-proxy.yourname.workers.dev"
-            style={{ width: "100%", marginTop: 8, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-        </div>
-      )}
-
       {/* Test + Save */}
       <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={testConnection} disabled={testing || (!form.backendUrl && (!form.apiKey || !form.proxyUrl))}
-          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: (!form.backendUrl && (!form.apiKey || !form.proxyUrl)) ? 0.5 : 1 }}>
+        <button onClick={testConnection} disabled={testing || !form.backendUrl}
+          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: !form.backendUrl ? 0.5 : 1 }}>
           {testing ? "Testing..." : "Test Connection"}
         </button>
         <button onClick={save}
