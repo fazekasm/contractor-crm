@@ -1942,12 +1942,80 @@ function OpenSignSettings({ data, setData, t }) {
     </div>
   );
 }
+// ─── INVOICE DOCUMENT PREVIEW MODAL ──────────────────────────────────────────
+function InvoiceDocModal({ inv, data, upd, t, onClose, downloadPDF, onViewDetails }) {
+  const [showSign, setShowSign] = useState(false);
+  const cust  = data.customers.find(c => c.id === inv.customerId);
+  const co    = data.company || {};
+  const html  = buildContractHTML(inv, cust, co, inv.contractTerms || {}, co.logo || "");
+  const sub   = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+  const total = sub + sub * (Number(inv.taxRate || 0) / 100);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", background: "#0a0a16" }}>
+
+      {/* ── Top toolbar ─────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#111126", borderBottom: "1px solid #2a2a4a", flexShrink: 0, minHeight: 56 }}>
+        <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "1px solid #3a3a6a", borderRadius: 8, color: "#a0a0c8", fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "6px 10px", flexShrink: 0 }}>✕</button>
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ color: "#a78bfa", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{String(inv.number || "")}</div>
+          <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {String(inv.customerName || "")}
+            <span style={{ color: total > 0 && inv.status === "paid" ? "#4ade80" : "#f97316", fontWeight: 800, marginLeft: 8 }}>
+              {fmt$(total)} {inv.status === "paid" ? "· PAID" : "· UNPAID"}
+            </span>
+          </div>
+        </div>
+        {onViewDetails && (
+          <button onClick={onViewDetails} style={{ background: "#1a1a3a", border: "1px solid #3a3a6a", borderRadius: 8, padding: "7px 11px", color: "#a0a0d0", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
+            ⋮ Details
+          </button>
+        )}
+        <button onClick={() => downloadPDF(inv)} style={{ background: "#1a1a3a", border: "1px solid #3a3a6a", borderRadius: 8, padding: "7px 11px", color: "#a0a0d0", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
+          ⬇ PDF
+        </button>
+        <button onClick={() => setShowSign(s => !s)} style={{ background: showSign ? "#7c3aed" : "linear-gradient(135deg,#6d28d9,#7c3aed)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit" }}>
+          ✍️ Send to Sign
+        </button>
+      </div>
+
+      {/* ── OpenSign slide-down panel ────────────────────────────────────── */}
+      {showSign && (
+        <div style={{ padding: "14px 14px 0", background: "linear-gradient(135deg,#130a1f,#1a0a2e)", borderBottom: "2px solid #7c3aed", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 20 }}>✍️</span>
+              <div>
+                <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700 }}>Send via OpenSign™</div>
+                <div style={{ color: "#a78bfa", fontSize: 11 }}>Customer signs in their browser — no account needed</div>
+              </div>
+            </div>
+            <button onClick={() => setShowSign(false)} style={{ background: "transparent", border: "none", color: "#a78bfa", fontSize: 20, cursor: "pointer", padding: "4px 8px", lineHeight: 1, fontFamily: "inherit" }}>✕</button>
+          </div>
+          <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
+          <div style={{ height: 14 }} />
+        </div>
+      )}
+
+      {/* ── Document iframe ──────────────────────────────────────────────── */}
+      <iframe
+        srcDoc={html}
+        title={`Invoice ${String(inv.number || "")}`}
+        style={{ flex: 1, border: "none", width: "100%", display: "block", background: "#fff" }}
+        sandbox="allow-same-origin allow-scripts"
+      />
+    </div>
+  );
+}
+
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
 function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [docModalInv, setDocModalInv]   = useState(null);
   const photoRef = useRef();
 
   const upd = (id, patch) => setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === id ? { ...i, ...patch } : i) }));
@@ -2034,6 +2102,11 @@ function Invoices({ data, setData, t, initialFilter }) {
 
     return (
       <div>
+        {showDocModal && docModalInv && (
+          <InvoiceDocModal inv={docModalInv} data={data} upd={upd} t={t}
+            onClose={() => setShowDocModal(false)}
+            downloadPDF={downloadPDF} />
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
           <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
           <div>
@@ -2045,6 +2118,11 @@ function Invoices({ data, setData, t, initialFilter }) {
             <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span>
           </div>
         </div>
+
+        {/* ── Document preview ────────────────────────────────── */}
+        <button onClick={() => { setDocModalInv(inv); setShowDocModal(true); }} style={{ width: "100%", background: "linear-gradient(135deg,#1a0a2e,#0d0720)", border: "2px solid #7c3aed", borderRadius: 12, padding: "14px 16px", color: "#a78bfa", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 14, fontFamily: "inherit" }}>
+          <span style={{ fontSize: 20 }}>📄</span> Preview Invoice Document
+        </button>
 
         {/* Status badges */}
         <Card t={t} style={{ marginBottom: 14, padding: 16 }}>
@@ -2207,6 +2285,12 @@ function Invoices({ data, setData, t, initialFilter }) {
 
   return (
     <div>
+      {showDocModal && docModalInv && (
+        <InvoiceDocModal inv={docModalInv} data={data} upd={upd} t={t}
+          onClose={() => setShowDocModal(false)}
+          downloadPDF={downloadPDF}
+          onViewDetails={() => { setSelected(docModalInv); setEditingContract(false); setView("detail"); setShowDocModal(false); }} />
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Invoices + Contracts</h2>
       </div>
@@ -2263,7 +2347,7 @@ function Invoices({ data, setData, t, initialFilter }) {
           const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
           const total = sub + sub * (Number(inv.taxRate || 0) / 100);
           return (
-            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setView("detail"); }}>
+            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setDocModalInv(inv); setShowDocModal(true); }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div>
                   <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
@@ -2284,7 +2368,7 @@ function Invoices({ data, setData, t, initialFilter }) {
                 {(inv.photos || []).length > 0 && (
                   <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photo{inv.photos.length !== 1 ? "s" : ""}</div>
                 )}
-                <div style={{ marginLeft: "auto", color: t.subtext, fontSize: 11, alignSelf: "center" }}>Tap to open →</div>
+                <div style={{ marginLeft: "auto", color: t.subtext, fontSize: 11, alignSelf: "center" }}>📄 Tap to preview →</div>
               </div>
             </Card>
           );
