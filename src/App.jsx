@@ -99,7 +99,7 @@ const fmtDate = d => d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", {
 const STORAGE_KEY = "crm_v3";
 
 const defaultData = () => ({
-  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "" },
+  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "", customContract: "", customContractName: "" },
   theme: { preset: "Bold Blue", custom: { ...THEMES["Bold Blue"] } },
   customers: [], jobs: [], estimates: [], invoices: [],
   credentials: { docs: [] },
@@ -1966,8 +1966,10 @@ function Invoices({ data, setData, t, initialFilter }) {
     const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
     const total = sub + sub * (Number(inv.taxRate || 0) / 100);
     if (!h) { alert("Add your Venmo handle in Settings → Company Info first."); return; }
-    // Use location.href for reliable mobile deep-link into Venmo app
-    window.location.href = `https://venmo.com/${h.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number + " — " + inv.customerName)}&amount=${total.toFixed(2)}`;
+    const url = `https://venmo.com/${h.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number + " — " + inv.customerName)}&amount=${total.toFixed(2)}`;
+    // Try window.open first (works on desktop + most mobile), fall back to location.href for deep-link
+    const w = window.open(url, "_blank");
+    if (!w || w.closed) window.location.href = url;
   };
 
   // Download PDF — opens in new tab on iOS (where <a download> is unreliable),
@@ -2498,6 +2500,46 @@ function Settings({ data, setData, t }) {
               </label>
               {co.logo && <Btn t={t} size="sm" variant="danger" onClick={() => setCo(c => ({ ...c, logo: "" }))}><Icon d={IC.x} size={12} /> Remove</Btn>}
             </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Custom Contract Upload */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>📄 Custom Contract Template</SectionLabel>
+        <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12 }}>Upload a PDF contract to attach to all Invoices, Estimates, and Proposals. This replaces the default generated contract.</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14 }}>
+          <div style={{ width: 60, height: 72, background: t.surface2, border: `2px dashed ${t.border}`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {co.customContract ? <span style={{ fontSize: 28 }}>📄</span> : <Icon d={IC.upload} size={24} color={t.subtext} />}
+          </div>
+          <div style={{ flex: 1 }}>
+            {co.customContract ? (
+              <>
+                <div style={{ color: t.text, fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{co.customContractName || "contract.pdf"}</div>
+                <div style={{ color: t.subtext, fontSize: 11, marginBottom: 8 }}>Uploaded — will be used on all documents</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.surface2, border: `1px solid ${t.border}`, color: t.text, borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <Icon d={IC.upload} size={12} color={t.subtext} /> Replace
+                    <input type="file" accept=".pdf" onChange={e => {
+                      const f = e.target.files[0]; if (!f) return;
+                      const r = new FileReader(); r.onload = ev => setCo(c => ({ ...c, customContract: ev.target.result, customContractName: f.name })); r.readAsDataURL(f);
+                    }} style={{ display: "none" }} />
+                  </label>
+                  <Btn t={t} size="sm" variant="danger" onClick={() => setCo(c => ({ ...c, customContract: "", customContractName: "" }))}><Icon d={IC.x} size={12} /> Remove</Btn>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ color: t.text, fontSize: 13, marginBottom: 8 }}>No contract uploaded yet</div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, color: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <Icon d={IC.upload} size={14} color="#fff" /> Upload Contract PDF
+                  <input type="file" accept=".pdf" onChange={e => {
+                    const f = e.target.files[0]; if (!f) return;
+                    const r = new FileReader(); r.onload = ev => setCo(c => ({ ...c, customContract: ev.target.result, customContractName: f.name })); r.readAsDataURL(f);
+                  }} style={{ display: "none" }} />
+                </label>
+              </>
+            )}
           </div>
         </div>
       </Card>
