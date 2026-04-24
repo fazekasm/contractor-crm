@@ -2390,34 +2390,7 @@ function Invoices({ data, setData, t, initialFilter }) {
         ))}
       </div>
 
-      {/* Workflow — each step is a real action button */}
-      <Card t={t} style={{ marginBottom: 16, border: `1px solid #4c1d95` }}>
-        <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>✍️ Quick Steps</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
-          {[
-            { n: "1", label: "New Estimate", sub: "Build scope & price", color: "#2563eb", action: null, hint: "→ Go to Estimates tab" },
-            { n: "2", label: "→ Invoice",    sub: "Convert estimate",    color: "#059669", action: null, hint: "Open estimate → Convert" },
-            { n: "3", label: "Download PDF", sub: "Save & share file",   color: "#7c3aed", action: () => { if (data.invoices.length > 0) { downloadPDF(data.invoices[data.invoices.length - 1]); } else alert("Create an invoice first."); }, hint: "Downloads latest invoice as PDF" },
-            { n: "4", label: "Get Paid",     sub: "Venmo or mark paid",  color: "#f97316", action: () => setLocalFilter("unpaid"), hint: "View unpaid invoices" },
-          ].map(step => (
-            <button key={step.n} onClick={step.action || undefined} title={step.hint}
-              style={{ background: "#1a0a2e", border: `1px solid ${step.action ? step.color + "88" : "#4c1d95"}`, borderRadius: 8, padding: "10px 4px", textAlign: "center", cursor: step.action ? "pointer" : "default", fontFamily: "inherit", transition: "border-color 0.15s" }}
-              onMouseEnter={e => step.action && (e.currentTarget.style.borderColor = step.color)}
-              onMouseLeave={e => step.action && (e.currentTarget.style.borderColor = step.color + "88")}>
-              <div style={{ color: step.color, fontSize: 16, fontWeight: 800 }}>{step.n}</div>
-              <div style={{ color: t.text, fontSize: 11, fontWeight: 600, marginTop: 2 }}>{step.label}</div>
-              <div style={{ color: t.subtext, fontSize: 9, marginTop: 1 }}>{step.sub}</div>
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      {/* Accounting Exports */}
-      <Card t={t} style={{ marginBottom: 16, border: `1px solid ${t.accent}44` }}>
-        <SectionLabel t={t}>📊 Accounting Exports</SectionLabel>
-        <AccountingExports data={data} t={t} />
-      </Card>
-
+      {/* Invoice list — immediately below filter tabs */}
       {displayedInvoices.length === 0 ? (
         <Card t={t} style={{ textAlign: "center", padding: 40 }}>
           <div style={{ color: t.subtext, marginBottom: 8 }}>
@@ -2479,6 +2452,34 @@ function Invoices({ data, setData, t, initialFilter }) {
             </Card>
           );
         })}
+
+      {/* Workflow — each step is a real action button */}
+      <Card t={t} style={{ marginBottom: 16, border: `1px solid #4c1d95` }}>
+        <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>✍️ Quick Steps</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+          {[
+            { n: "1", label: "New Estimate", sub: "Build scope & price", color: "#2563eb", action: null, hint: "→ Go to Estimates tab" },
+            { n: "2", label: "→ Invoice",    sub: "Convert estimate",    color: "#059669", action: null, hint: "Open estimate → Convert" },
+            { n: "3", label: "Download PDF", sub: "Save & share file",   color: "#7c3aed", action: () => { if (data.invoices.length > 0) { downloadPDF(data.invoices[data.invoices.length - 1]); } else alert("Create an invoice first."); }, hint: "Downloads latest invoice as PDF" },
+            { n: "4", label: "Get Paid",     sub: "Venmo or mark paid",  color: "#f97316", action: () => setLocalFilter("unpaid"), hint: "View unpaid invoices" },
+          ].map(step => (
+            <button key={step.n} onClick={step.action || undefined} title={step.hint}
+              style={{ background: "#1a0a2e", border: `1px solid ${step.action ? step.color + "88" : "#4c1d95"}`, borderRadius: 8, padding: "10px 4px", textAlign: "center", cursor: step.action ? "pointer" : "default", fontFamily: "inherit", transition: "border-color 0.15s" }}
+              onMouseEnter={e => step.action && (e.currentTarget.style.borderColor = step.color)}
+              onMouseLeave={e => step.action && (e.currentTarget.style.borderColor = step.color + "88")}>
+              <div style={{ color: step.color, fontSize: 16, fontWeight: 800 }}>{step.n}</div>
+              <div style={{ color: t.text, fontSize: 11, fontWeight: 600, marginTop: 2 }}>{step.label}</div>
+              <div style={{ color: t.subtext, fontSize: 9, marginTop: 1 }}>{step.sub}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Accounting Exports */}
+      <Card t={t} style={{ marginBottom: 16, border: `1px solid ${t.accent}44` }}>
+        <SectionLabel t={t}>📊 Accounting Exports</SectionLabel>
+        <AccountingExports data={data} t={t} />
+      </Card>
     </div>
   );
 }
