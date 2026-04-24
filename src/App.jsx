@@ -1499,7 +1499,7 @@ function OpenSignSend({ inv, data, upd, t }) {
   const cust      = data.customers.find(c => c.id === inv.customerId);
 
   // Pre-fill email from customer record
-  useState(() => {
+  useEffect(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
   }, [cust]);
 
