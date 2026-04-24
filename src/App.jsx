@@ -349,6 +349,26 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
         ))}
       </div>
 
+      {/* Quick Actions */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>Quick Actions</SectionLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            { label: "+ New Estimate", color: t.accent,   tab: "estimates" },
+            { label: "+ New Invoice",  color: "#059669",  tab: "invoices"  },
+            { label: "+ New Client",   color: "#06b6d4",  tab: "customers" },
+            { label: "+ New Job",      color: "#f59e0b",  tab: "jobs"      },
+          ].map(btn => (
+            <button key={btn.label} onClick={() => setTab(btn.tab)}
+              style={{ background: t.surface2, border: `1px solid ${btn.color}55`, borderRadius: 12, padding: "14px 8px", color: btn.color, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", minHeight: 48, transition: "border-color 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = btn.color}
+              onMouseLeave={e => e.currentTarget.style.borderColor = btn.color + "55"}>
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
       <Card t={t} style={{ marginBottom: 16 }}>
         <SectionLabel t={t}>Pipeline — Tap any stage to filter jobs</SectionLabel>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -402,7 +422,7 @@ function Customers({ data, setData, t }) {
   if (view === "form") return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
+        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Clients</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? "Edit" : "New"} Customer</h2>
       </div>
       <Card t={t}>
@@ -428,7 +448,7 @@ function Customers({ data, setData, t }) {
         <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add</Btn>
       </div>
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 16, boxSizing: "border-box" }} />
-      {filtered.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ color: t.subtext, marginBottom: 14 }}>No customers</div><Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={13} /> Add First</Btn></Card>
+      {filtered.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>👤</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>{search ? "No matching clients" : "No clients yet"}</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Add First Client</Btn></Card>
         : filtered.map(c => (
           <Card key={c.id} t={t} style={{ marginBottom: 10, padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -445,7 +465,7 @@ function Customers({ data, setData, t }) {
 }
 
 // ─── JOBS ─────────────────────────────────────────────────────────────────────
-function Jobs({ data, setData, t, initialFilter }) {
+function Jobs({ data, setData, t, initialFilter, goTo }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ title: "", customerId: "", customerName: "", address: "", status: "lead", date: today(), value: "", notes: "", checklist: [] });
@@ -473,7 +493,7 @@ function Jobs({ data, setData, t, initialFilter }) {
   if (view === "form") return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
+        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Jobs</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? "Edit" : "New"} Job</h2>
       </div>
       <Card t={t} style={{ marginBottom: 14 }}>
@@ -516,6 +536,53 @@ function Jobs({ data, setData, t, initialFilter }) {
           <Btn t={t} size="sm" onClick={addCheckItem}><Icon d={IC.plus} size={13} /></Btn>
         </div>
       </Card>
+      {/* Related invoices & estimates */}
+      {selected && (() => {
+        const relInvoices = data.invoices.filter(i =>
+          (form.customerId && i.customerId === form.customerId) ||
+          (form.customerName && i.customerName === form.customerName)
+        );
+        const relEstimates = data.estimates.filter(e =>
+          (form.customerId && e.customerId === form.customerId) ||
+          (form.customerName && e.customerName === form.customerName)
+        );
+        if (relInvoices.length === 0 && relEstimates.length === 0) return null;
+        return (
+          <Card t={t} style={{ marginBottom: 14 }}>
+            <SectionLabel t={t}>Related Documents</SectionLabel>
+            {relInvoices.map(inv => {
+              const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+              const total = sub + sub * (Number(inv.taxRate || 0) / 100);
+              return (
+                <button key={inv.id} onClick={() => goTo && goTo("invoices")}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  <div>
+                    <div style={{ color: t.accent, fontSize: 11, fontWeight: 700 }}>{inv.number}</div>
+                    <div style={{ color: t.text, fontSize: 13 }}>{inv.jobTitle || inv.customerName}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 14, fontWeight: 700 }}>{fmt$(total)}</div>
+                    <div style={{ color: t.subtext, fontSize: 10 }}>View Invoice →</div>
+                  </div>
+                </button>
+              );
+            })}
+            {relEstimates.map(est => (
+              <button key={est.id} onClick={() => goTo && goTo("estimates")}
+                style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <div>
+                  <div style={{ color: t.accent, fontSize: 11, fontWeight: 700 }}>{est.number}</div>
+                  <div style={{ color: t.text, fontSize: 13 }}>{est.jobTitle || est.customerName}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: "#4ade80", fontSize: 14, fontWeight: 700 }}>{fmt$(est.total)}</div>
+                  <div style={{ color: t.subtext, fontSize: 10 }}>View Estimate →</div>
+                </div>
+              </button>
+            ))}
+          </Card>
+        );
+      })()}
       <div style={{ display: "flex", gap: 10 }}><Btn t={t} onClick={save}><Icon d={IC.check} size={14} /> Save</Btn><Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn></div>
     </div>
   );
@@ -531,8 +598,16 @@ function Jobs({ data, setData, t, initialFilter }) {
           <button key={s.value || s.key} onClick={() => setFilter(s.value || s.key)} style={{ background: filter === (s.value || s.key) ? t.muted : t.surface, border: `1px solid ${filter === (s.value || s.key) ? t.accent : t.border}`, color: filter === (s.value || s.key) ? t.accent : t.subtext, borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{s.label}</button>
         ))}
       </div>
-      {filtered.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ color: t.subtext }}>No jobs</div></Card>
-        : filtered.map(job => {
+      {filtered.length === 0 ? (
+        <Card t={t} style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>🔨</div>
+          <div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>{filter === "all" ? "No jobs yet" : `No ${filter} jobs`}</div>
+          {filter === "all"
+            ? <Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Create First Job</Btn>
+            : <button onClick={() => setFilter("all")} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 16px", color: t.subtext, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Show All Jobs</button>
+          }
+        </Card>
+      ) : filtered.map(job => {
           const cl = job.checklist || [];
           const pct = cl.length ? Math.round(cl.filter(c => c.done).length / cl.length * 100) : null;
           return (
@@ -928,7 +1003,7 @@ function Estimates({ data, setData, t }) {
   if (view === "form" && form) return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
+        <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Estimates</Btn>
         <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{selected ? form.number : "New Estimate"}</h2>
       </div>
       <AIEstimatePanel
@@ -990,7 +1065,7 @@ function Estimates({ data, setData, t }) {
         <h2 style={{ color: t.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Estimates</h2>
         <Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={14} /> New</Btn>
       </div>
-      {data.estimates.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ color: t.subtext, marginBottom: 14 }}>No estimates</div><Btn t={t} size="sm" onClick={() => open(null)}><Icon d={IC.plus} size={13} /> Create First</Btn></Card>
+      {data.estimates.length === 0 ? <Card t={t} style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 32, marginBottom: 10 }}>📋</div><div style={{ color: t.subtext, fontSize: 14, marginBottom: 16 }}>No estimates yet</div><Btn t={t} onClick={() => open(null)}><Icon d={IC.plus} size={14} /> Create First Estimate</Btn></Card>
         : [...data.estimates].reverse().map(est => (
           <Card key={est.id} t={t} style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -999,7 +1074,7 @@ function Estimates({ data, setData, t }) {
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Btn t={t} size="sm" variant="ghost" onClick={() => open(est)}><Icon d={IC.edit} size={12} /> Edit</Btn>
-              {est.status !== "approved" && <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice+Contract</Btn>}
+              <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice</Btn>
               <Btn t={t} size="sm" variant="danger" onClick={() => del(est.id)}><Icon d={IC.trash} size={12} /></Btn>
             </div>
           </Card>
@@ -2108,7 +2183,7 @@ function Invoices({ data, setData, t, initialFilter }) {
             downloadPDF={downloadPDF} />
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-          <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
+          <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back to Invoices</Btn>
           <div>
             <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
             <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</h2>
@@ -2361,14 +2436,33 @@ function Invoices({ data, setData, t, initialFilter }) {
                   </span>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
-                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Signature"}
+                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Sent" : "✍️ Unsigned"}
                 </div>
                 {(inv.photos || []).length > 0 && (
-                  <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photo{inv.photos.length !== 1 ? "s" : ""}</div>
+                  <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length}</div>
                 )}
-                <div style={{ marginLeft: "auto", color: t.subtext, fontSize: 11, alignSelf: "center" }}>📄 Tap to preview →</div>
+                <div style={{ marginLeft: "auto", color: t.muted, fontSize: 10 }}>tap to preview</div>
+              </div>
+              {/* Contextual action chips */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+                {inv.status !== "paid" && !inv.signedAt && (
+                  <button onClick={e => { e.stopPropagation(); setDocModalInv(inv); setShowDocModal(true); }}
+                    style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#a78bfa", cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
+                    ✍️ Send to Sign
+                  </button>
+                )}
+                {inv.status !== "paid" && (
+                  <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }}
+                    style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#4ade80", cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
+                    ✅ Mark Paid
+                  </button>
+                )}
+                <button onClick={e => { e.stopPropagation(); downloadPDF(inv); }}
+                  style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: t.subtext, cursor: "pointer", minHeight: 30, fontFamily: "inherit" }}>
+                  ⬇ {inv.status === "paid" ? "Receipt" : "Download"}
+                </button>
               </div>
             </Card>
           );
@@ -2807,7 +2901,7 @@ export default function App() {
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 110px" }}>
         {tab === "dashboard" && <Dashboard data={data} t={t} setTab={goTo} setInvoiceFilter={f => setInvoiceFilter(f)} setJobFilter={f => setJobFilter(f)} />}
         {tab === "customers" && <Customers data={data} setData={setData} t={t} />}
-        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} />}
+        {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} goTo={goTo} />}
         {tab === "estimates" && <Estimates data={data} setData={setData} t={t} />}
         {tab === "invoices"  && <Invoices data={data} setData={setData} t={t} initialFilter={invoiceFilter} />}
         {tab === "calendar"  && <Calendar data={data} setData={setData} t={t} setTab={id => goTo(id)} />}
