@@ -1,5 +1,25 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, Component } from "react";
 import { onAuthChange, loadFromFirestore, signInWithGoogle, signOutUser, saveToFirestore, auth, storage, storageRef, uploadString, getDownloadURL, deleteObject } from './firebase.js'
+
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error("CRM ErrorBoundary:", error, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: "system-ui", color: "#f0f6ff", background: "#0d1520", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+          <h2 style={{ margin: "0 0 8px" }}>Something went wrong</h2>
+          <p style={{ color: "#94a3b8", maxWidth: 400, fontSize: 14 }}>{String(this.state.error?.message || "An unexpected error occurred.")}</p>
+          <button onClick={() => { this.setState({ hasError: false, error: null }); }} style={{ marginTop: 16, background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Try Again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
@@ -104,6 +124,9 @@ const fmtDate = d => {
     return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   } catch { return "—"; }
 };
+// HTML escape to prevent XSS in generated contract/invoice HTML
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+
 const STORAGE_KEY = "crm_v3";
 
 const defaultData = () => ({
@@ -117,10 +140,25 @@ const defaultData = () => ({
   aiConfig: { provider: "claude", apiKey: "", model: "claude-sonnet-4-5", openaiKey: "", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
+// Deep-safe merge: prevents Firestore null values from overriding default sub-objects
+const safeMerge = (defaults, cloud) => {
+  const result = { ...defaults };
+  for (const key of Object.keys(cloud || {})) {
+    const val = cloud[key];
+    if (val === null || val === undefined) continue;           // skip nulls — keep default
+    if (typeof val === "object" && !Array.isArray(val)) {
+      result[key] = { ...(defaults[key] || {}), ...val };     // merge one level deep
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
+};
+
 const loadData = () => {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    const base = { ...defaultData(), ...raw };
+    const base = safeMerge(defaultData(), raw);
     if (raw.lightMode === undefined) {
       const themeKey = localStorage.getItem("crm_theme");
       if (themeKey === "light") base.lightMode = true;
@@ -130,11 +168,17 @@ const loadData = () => {
 };
 let _firestoreTimer = null;
 const saveData = (d, uid) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); localStorage.setItem("crm_theme", d.lightMode ? "light" : "dark"); } catch {}
+  // Strip legacy API keys before persisting — they're proxied through backend now
+  const clean = { ...d };
+  if (clean.aiConfig) {
+    const { apiKey, openaiKey, ...safeAi } = clean.aiConfig;
+    clean.aiConfig = safeAi;
+  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(clean)); localStorage.setItem("crm_theme", clean.lightMode ? "light" : "dark"); } catch {}
   if (uid) {
     clearTimeout(_firestoreTimer);
     _firestoreTimer = setTimeout(() => {
-      saveToFirestore(uid, d).catch(e => console.error("Firestore save error:", e));
+      saveToFirestore(uid, clean).catch(e => console.error("Firestore save error:", e));
     }, 1500);
   }
 };
@@ -215,12 +259,12 @@ const Btn = ({ children, onClick, variant = "primary", size = "md", style, disab
   );
 };
 
-const Inp = ({ label, value, onChange, type = "text", placeholder, required, rows, t }) => (
+const Inp = ({ label, value, onChange, type = "text", placeholder, required, rows, t, maxLength }) => (
   <div style={{ marginBottom: 14 }}>
     {label && <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5, fontWeight: 600 }}>{label}{required && <span style={{ color: "#ef4444" }}> *</span>}</label>}
     {rows
-      ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", transition: "border-color 0.15s, box-shadow 0.15s" }} />
-      : <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s" }} />
+      ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} maxLength={maxLength || 2000} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", transition: "border-color 0.15s, box-shadow 0.15s" }} />
+      : <input type={type} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength || 500} placeholder={placeholder} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color 0.15s, box-shadow 0.15s" }} />
     }
   </div>
 );
@@ -253,8 +297,8 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
 
   const lineRows = lines.map(l => `
     <tr>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${typeof l?.description === "string" ? l.description : (l?.description ? String(l.description) : "—")}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${l?.qty ?? 0} ${l?.unit || ""}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${esc(typeof l?.description === "string" ? l.description : (l?.description ? String(l.description) : "—"))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${esc(l?.qty ?? 0)} ${esc(l?.unit || "")}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">${fmt$(l?.unitPrice)}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px">${fmt$(Number(l?.qty || 0) * Number(l?.unitPrice || 0))}</td>
     </tr>`).join("");
@@ -266,7 +310,7 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
         ${inv.photos.map(p => `
           <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
             <img src="${p.url || p.dataUrl}" style="width:100%;height:140px;object-fit:cover;display:block"/>
-            ${p.caption ? `<div style="padding:6px 8px;font-size:11px;color:#6b7280;background:#f9fafb">${p.caption}${p.label ? ` · <strong>${p.label}</strong>` : ""}</div>` : ""}
+            ${p.caption ? `<div style="padding:6px 8px;font-size:11px;color:#6b7280;background:#f9fafb">${esc(p.caption)}${p.label ? ` · <strong>${esc(p.label)}</strong>` : ""}</div>` : ""}
           </div>`).join("")}
       </div>
     </div>` : "";
@@ -303,16 +347,16 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   <div class="header">
     <div>
       ${logo ? `<img src="${logo}" style="height:60px;max-width:200px;object-fit:contain;display:block;margin-bottom:8px"/>` : ""}
-      <div class="co-name">${co.name || "Your Company"}</div>
+      <div class="co-name">${esc(co.name || "Your Company")}</div>
       <div style="color:#6b7280;font-size:12px;line-height:1.8">
-        ${[co.address, co.city, co.state, co.zip].filter(Boolean).join(", ")}<br>
-        ${co.phone || ""} ${co.email ? `· ${co.email}` : ""}<br>
-        ${co.ccbNumber ? `<span class="ccb-badge">CCB # ${co.ccbNumber}</span>` : ""}
+        ${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}<br>
+        ${esc(co.phone || "")} ${co.email ? `· ${esc(co.email)}` : ""}<br>
+        ${co.ccbNumber ? `<span class="ccb-badge">CCB # ${esc(co.ccbNumber)}</span>` : ""}
       </div>
     </div>
     <div style="text-align:right">
       <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.08em">Contract & Invoice</div>
-      <div style="font-size:28px;font-weight:800">${inv.number}</div>
+      <div style="font-size:28px;font-weight:800">${esc(inv.number)}</div>
       <div style="color:#6b7280;font-size:12px;margin-top:6px">Issued: ${fmtDate(inv.date)}</div>
       ${inv.dueDate ? `<div style="color:#dc2626;font-size:12px">Due: ${fmtDate(inv.dueDate)}</div>` : ""}
       ${inv.status === "paid" ? `<div style="margin-top:8px;background:#f0fdf4;border:2px solid #16a34a;border-radius:8px;padding:6px 14px;color:#15803d;font-weight:800;display:inline-block">✓ PAID</div>` : ""}
@@ -321,16 +365,16 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   <div class="parties">
     <div class="party-box">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">Contractor</div>
-      <div style="font-size:15px;font-weight:700">${co.name || "Your Company"}</div>
-      <div style="color:#6b7280;font-size:12px;margin-top:4px">${[co.address, co.city, co.state, co.zip].filter(Boolean).join(", ")}</div>
-      ${co.ccbNumber ? `<div style="margin-top:6px"><span class="ccb-badge">CCB # ${co.ccbNumber}</span></div>` : ""}
+      <div style="font-size:15px;font-weight:700">${esc(co.name || "Your Company")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:4px">${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}</div>
+      ${co.ccbNumber ? `<div style="margin-top:6px"><span class="ccb-badge">CCB # ${esc(co.ccbNumber)}</span></div>` : ""}
     </div>
     <div class="party-box">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">Owner / Customer</div>
-      <div style="font-size:15px;font-weight:700">${cust?.name || inv.customerName || "—"}</div>
+      <div style="font-size:15px;font-weight:700">${esc(cust?.name || inv.customerName || "—")}</div>
       <div style="color:#6b7280;font-size:12px;margin-top:4px">
-        ${cust ? [cust.address, cust.city, cust.state, cust.zip].filter(Boolean).join(", ") : ""}
-        ${cust?.phone ? `<br>${cust.phone}` : ""}${cust?.email ? `<br>${cust.email}` : ""}
+        ${cust ? [cust.address, cust.city, cust.state, cust.zip].filter(Boolean).map(esc).join(", ") : ""}
+        ${cust?.phone ? `<br>${esc(cust.phone)}` : ""}${cust?.email ? `<br>${esc(cust.email)}` : ""}
       </div>
     </div>
   </div>
@@ -342,41 +386,41 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
     ${Number(inv.taxRate) > 0 ? `<div class="t-row"><span>Tax (${inv.taxRate}%)</span><span>${fmt$(taxAmt)}</span></div>` : ""}
     <div class="t-total"><span>Total Due</span><span>${fmt$(total)}</span></div>
   </div>
-  ${typeof inv.notes === 'string' && inv.notes ? `<div class="notice"><strong>Scope Notes:</strong> ${inv.notes}</div>` : ""}
+  ${typeof inv.notes === 'string' && inv.notes ? `<div class="notice"><strong>Scope Notes:</strong> ${esc(inv.notes)}</div>` : ""}
   ${photoSection}
   <h2>Oregon Residential Construction Contract — Required Disclosures</h2>
   <div class="notice"><strong>Oregon Law Notice:</strong> Oregon law requires residential contractors to be licensed with the Oregon CCB. Verify at <strong>oregon.gov/ccb</strong> or call 503-378-4621.</div>
   <div class="clause"><span class="clause-num">1.</span><strong>Right to Cancel (ORS 83.820):</strong> For home solicitation contracts, the Owner has three (3) business days to cancel without penalty.</div>
-  <div class="clause"><span class="clause-num">2.</span><strong>CCB License:</strong> Contractor holds valid Oregon CCB license #${co.ccbNumber || "__________"} and maintains required insurance.</div>
+  <div class="clause"><span class="clause-num">2.</span><strong>CCB License:</strong> Contractor holds valid Oregon CCB license #${esc(co.ccbNumber || "__________")} and maintains required insurance.</div>
   <div class="clause"><span class="clause-num">3.</span><strong>Lien Rights (ORS 87.093):</strong> Those who supply labor or materials may file a lien on your property if unpaid.</div>
-  <div class="clause"><span class="clause-num">4.</span><strong>Payment Schedule:</strong> ${typeof contractTerms?.paymentSchedule === 'string' ? contractTerms.paymentSchedule || "Payment due upon completion unless otherwise agreed in writing." : "Payment due upon completion unless otherwise agreed in writing."}</div>
+  <div class="clause"><span class="clause-num">4.</span><strong>Payment Schedule:</strong> ${esc(typeof contractTerms?.paymentSchedule === 'string' ? contractTerms.paymentSchedule || "Payment due upon completion unless otherwise agreed in writing." : "Payment due upon completion unless otherwise agreed in writing.")}</div>
   <div class="clause"><span class="clause-num">5.</span><strong>Change Orders:</strong> All scope or cost changes must be agreed to in writing before additional work begins.</div>
-  <div class="clause"><span class="clause-num">6.</span><strong>Warranties:</strong> ${typeof contractTerms?.warranty === 'string' ? contractTerms.warranty || "Contractor warrants all labor and materials for one (1) year from substantial completion." : "Contractor warrants all labor and materials for one (1) year from substantial completion."}</div>
-  <div class="clause"><span class="clause-num">7.</span><strong>Permits:</strong> ${typeof contractTerms?.permits === 'string' ? contractTerms.permits || "Contractor shall obtain all required permits. Cost included unless noted." : "Contractor shall obtain all required permits. Cost included unless noted."}</div>
+  <div class="clause"><span class="clause-num">6.</span><strong>Warranties:</strong> ${esc(typeof contractTerms?.warranty === 'string' ? contractTerms.warranty || "Contractor warrants all labor and materials for one (1) year from substantial completion." : "Contractor warrants all labor and materials for one (1) year from substantial completion.")}</div>
+  <div class="clause"><span class="clause-num">7.</span><strong>Permits:</strong> ${esc(typeof contractTerms?.permits === 'string' ? contractTerms.permits || "Contractor shall obtain all required permits. Cost included unless noted." : "Contractor shall obtain all required permits. Cost included unless noted.")}</div>
   <div class="clause"><span class="clause-num">8.</span><strong>Dispute Resolution:</strong> Parties agree to mediation before arbitration or litigation. Complaints: Oregon CCB 503-378-4621.</div>
   <div class="clause"><span class="clause-num">9.</span><strong>Insurance:</strong> Contractor maintains general liability insurance of not less than $100,000 per occurrence.</div>
   <div class="clause"><span class="clause-num">10.</span><strong>Entire Agreement:</strong> This document constitutes the entire agreement. No oral representations shall modify these terms.</div>
-  ${typeof contractTerms?.additional === 'string' && contractTerms.additional ? `<div class="clause"><span class="clause-num">11.</span><strong>Additional Terms:</strong> ${contractTerms.additional}</div>` : ""}
+  ${typeof contractTerms?.additional === 'string' && contractTerms.additional ? `<div class="clause"><span class="clause-num">11.</span><strong>Additional Terms:</strong> ${esc(contractTerms.additional)}</div>` : ""}
   <h2>Signatures</h2>
   <p style="color:#6b7280;font-size:12px;margin-bottom:16px">By signing below, both parties agree to all terms in this contract.</p>
   <div class="sig-grid">
     <div class="sig-box">
       <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Contractor Signature</div>
       <div class="sig-line"></div>
-      <div style="font-size:13px;font-weight:600">${co.name || "Contractor"}</div>
+      <div style="font-size:13px;font-weight:600">${esc(co.name || "Contractor")}</div>
       <div style="color:#6b7280;font-size:11px;margin-top:6px">Date: ____________________</div>
     </div>
     <div class="sig-box">
       <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Owner / Customer Signature</div>
       <div class="sig-line"></div>
-      <div style="font-size:13px;font-weight:600">${cust?.name || inv.customerName || "Owner"}</div>
+      <div style="font-size:13px;font-weight:600">${esc(cust?.name || inv.customerName || "Owner")}</div>
       <div style="color:#6b7280;font-size:11px;margin-top:6px">Date: ____________________</div>
     </div>
   </div>
   ${inv.openSignUrl ? `<div class="sign-box no-print"><div style="font-size:18px;font-weight:700;color:#6d28d9">✍️ Sign This Contract Online</div><div style="color:#6b7280;margin-top:6px;font-size:13px">Click below to sign electronically via OpenSign™</div><a href="${inv.openSignUrl}" target="_blank" class="sign-btn">Sign Contract Now</a></div>` : ""}
-  ${inv.status !== "paid" && venmoHandle ? `<div class="venmo-box no-print"><div style="font-size:18px;font-weight:700;color:#1d4ed8">💙 Pay via Venmo</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Send to <strong>${venmoHandle}</strong></div><a href="https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number)}&amount=${total.toFixed(2)}" target="_blank" class="venmo-btn">Pay ${fmt$(total)} via Venmo</a></div>` : ""}
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">${co.name || "Your Company"} · CCB # ${co.ccbNumber || "__________"} · ${fmtDate(today())}
-  ${co.netlifyUrl ? `<div style="margin-top:8px"><a href="${co.netlifyUrl}/credentials" target="_blank" style="color:#1d4ed8;font-size:11px;font-weight:600">🛡️ View License & Insurance Credentials</a></div>` : ""}
+  ${inv.status !== "paid" && venmoHandle ? `<div class="venmo-box no-print"><div style="font-size:18px;font-weight:700;color:#1d4ed8">💙 Pay via Venmo</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Send to <strong>${esc(venmoHandle)}</strong></div><a href="https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number)}&amount=${total.toFixed(2)}" target="_blank" class="venmo-btn">Pay ${fmt$(total)} via Venmo</a></div>` : ""}
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">${esc(co.name || "Your Company")} · CCB # ${esc(co.ccbNumber || "__________")} · ${fmtDate(today())}
+  ${co.netlifyUrl ? `<div style="margin-top:8px"><a href="${esc(co.netlifyUrl)}/credentials" target="_blank" style="color:#1d4ed8;font-size:11px;font-weight:600">🛡️ View License &amp; Insurance Credentials</a></div>` : ""}
   </div>
   </div></body></html>`;
 }
@@ -1172,25 +1216,25 @@ function CredentialsManager({ data, setData, t }) {
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:16px">
           ${isImage ? `<img src="${doc.dataUrl}" style="width:100%;max-height:300px;object-fit:contain;background:#f9fafb;padding:12px;box-sizing:border-box"/>` : `<div style="background:#f3f4f6;padding:20px;text-align:center"><a href="${doc.dataUrl}" target="_blank" style="background:#1d4ed8;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700">📄 View / Download PDF</a></div>`}
           <div style="padding:14px">
-            <div style="font-size:15px;font-weight:700;color:#111827">${doc.label}</div>
-            <div style="font-size:12px;color:#6b7280;margin-top:4px">Uploaded: ${doc.uploadedAt}</div>
-            ${doc.expiresAt && status ? `<div style="margin-top:8px;background:${status.bg};border:1px solid ${status.color};border-radius:20px;padding:3px 10px;display:inline-block;font-size:11px;font-weight:700;color:${status.color}">${status.icon} ${status.label}</div>` : ""}
-            ${doc.notes ? `<div style="margin-top:8px;font-size:12px;color:#6b7280">${doc.notes}</div>` : ""}
+            <div style="font-size:15px;font-weight:700;color:#111827">${esc(doc.label)}</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px">Uploaded: ${esc(doc.uploadedAt)}</div>
+            ${doc.expiresAt && status ? `<div style="margin-top:8px;background:${status.bg};border:1px solid ${status.color};border-radius:20px;padding:3px 10px;display:inline-block;font-size:11px;font-weight:700;color:${status.color}">${esc(status.icon)} ${esc(status.label)}</div>` : ""}
+            ${doc.notes ? `<div style="margin-top:8px;font-size:12px;color:#6b7280">${esc(doc.notes)}</div>` : ""}
           </div>
         </div>`;
     }).join("");
 
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>${co.name || "Contractor"} — Credentials</title>
+    <title>${esc(co.name || "Contractor")} — Credentials</title>
     <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;background:#f8fafc;color:#111827;padding:20px}
     .header{background:linear-gradient(135deg,#1d4ed8,#1e40af);color:#fff;border-radius:16px;padding:28px;margin-bottom:24px;text-align:center}
     .badge{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:4px 12px;font-size:12px;display:inline-block;margin-top:8px}
     </style></head><body>
     <div style="max-width:600px;margin:0 auto">
       <div class="header">
-        <div style="font-size:28px;font-weight:800">${co.name || "Your Contractor"}</div>
-        ${co.ccbNumber ? `<div class="badge">CCB License #${co.ccbNumber}</div>` : ""}
-        <div style="margin-top:12px;font-size:13px;opacity:0.85">${[co.phone, co.email].filter(Boolean).join(" · ")}</div>
+        <div style="font-size:28px;font-weight:800">${esc(co.name || "Your Contractor")}</div>
+        ${co.ccbNumber ? `<div class="badge">CCB License #${esc(co.ccbNumber)}</div>` : ""}
+        <div style="margin-top:12px;font-size:13px;opacity:0.85">${[co.phone, co.email].filter(Boolean).map(esc).join(" · ")}</div>
       </div>
       ${validDocs.length === 0 ? '<div style="text-align:center;padding:40px;color:#6b7280">No credentials uploaded yet.</div>' : docCards}
       <div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:24px">Generated by Contractor CRM · ${new Date().toLocaleDateString()}</div>
@@ -1513,31 +1557,15 @@ function AccountingExports({ data, t }) {
         </button>
       </div>
 
-      {/* QBO Setup Panel */}
+      {/* QBO Info Panel — credential inputs removed for security */}
       {showQBO && (
         <div style={{ background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ color: "#a78bfa", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>QuickBooks Online Setup</div>
-          <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
-            <strong style={{ color: t.text }}>How to get your QBO credentials:</strong><br/>
-            1. Go to <a href="https://developer.intuit.com" target="_blank" style={{ color: "#a78bfa" }}>developer.intuit.com</a> → Create App<br/>
-            2. Select "QuickBooks Online" → get your Client ID & Secret<br/>
-            3. Add OAuth redirect: <code style={{ background: t.surface, padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>https://yourapp.netlify.app/qbo-callback</code><br/>
-            4. Complete OAuth flow to get your Access Token & Realm ID
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            {[["Realm ID (Company ID)", "realmId", "1234567890"],["Access Token", "accessToken", "eyJ..."]].map(([lbl, key, ph]) => (
-              <div key={key}>
-                <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{lbl}</label>
-                <input value={qboConfig[key] || ""} onChange={e => setQboConfig(c => ({ ...c, [key]: e.target.value }))} placeholder={ph}
-                  style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "7px 10px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-              </div>
-            ))}
-          </div>
+          <div style={{ color: "#a78bfa", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>QuickBooks Online Integration</div>
           <div style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 8, padding: 10, marginBottom: 10 }}>
-            <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>⚠️ Note on QBO Direct Sync</div>
-            <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.6 }}>Full OAuth requires a backend server to handle token refresh. For now, use <strong style={{ color: t.text }}>CSV Export</strong> and import into QBO (File → Utilities → Import → IIF Files). This covers 95% of use cases. A full backend sync is on the premium roadmap.</div>
+            <div style={{ color: "#a78bfa", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>How to Import</div>
+            <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.6 }}>Use <strong style={{ color: t.text }}>CSV Export</strong> or <strong style={{ color: t.text }}>IIF Export</strong> above, then import into QuickBooks (File → Utilities → Import → IIF Files). This covers 95% of use cases. Full OAuth direct sync is on the premium roadmap.</div>
           </div>
-          <div style={{ color: "#4ade80", fontSize: 11, fontWeight: 600 }}>✅ CSV import into QBO works perfectly and takes under 2 minutes.</div>
+          <div style={{ color: "#4ade80", fontSize: 11, fontWeight: 600 }}>✅ CSV/IIF import into QBO works perfectly and takes under 2 minutes.</div>
         </div>
       )}
 
@@ -1960,7 +1988,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   const del = id => { if (window.confirm("Delete invoice?")) setData(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) })); };
 
   const openVenmo = inv => {
-    const h = data.company.venmoHandle || "";
+    const h = (data.company || {}).venmoHandle || "";
     const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
     const total = sub + sub * (Number(inv.taxRate || 0) / 100);
     if (!h) { alert("Add your Venmo handle in Settings → Company Info first."); return; }
@@ -1990,16 +2018,18 @@ function Invoices({ data, setData, t, initialFilter }) {
   // Download invoice HTML (line items, photos, terms) — always available
   const downloadInvoiceHTML = inv => {
     const cust = data.customers.find(c => c.id === inv.customerId);
-    const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
+    const _co = data.company || {};
+    const html = buildContractHTML(inv, cust, _co, inv.contractTerms || {}, _co.logo || "");
     const blob = new Blob([html], { type: "text/html" });
     triggerDownload(URL.createObjectURL(blob), `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`);
   };
 
   // Download custom contract PDF if uploaded
   const downloadCustomContract = () => {
+    const _co = data.company || {};
     const a = document.createElement("a");
-    a.href = data.company.customContract;
-    a.download = data.company.customContractName || "contract.pdf";
+    a.href = _co.customContract;
+    a.download = _co.customContractName || "contract.pdf";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2008,7 +2038,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   // Main download — if custom contract exists, downloads both; otherwise just HTML
   const downloadPDF = inv => {
     downloadInvoiceHTML(inv);
-    if (data.company.customContract) {
+    if ((data.company || {}).customContract) {
       // Small delay so browser doesn't block the second download
       setTimeout(() => downloadCustomContract(), 500);
     }
@@ -2017,7 +2047,8 @@ function Invoices({ data, setData, t, initialFilter }) {
   // Open PDF in new tab for printing (desktop fallback)
   const printPDF = inv => {
     const cust = data.customers.find(c => c.id === inv.customerId);
-    const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
+    const _co = data.company || {};
+    const html = buildContractHTML(inv, cust, _co, inv.contractTerms || {}, _co.logo || "");
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 600); }
     else downloadPDF(inv); // fallback if popup blocked
@@ -2036,8 +2067,10 @@ function Invoices({ data, setData, t, initialFilter }) {
   };
 
   const addPhoto = async (inv, e) => {
+    const MAX_PHOTO_MB = 10;
     const files = Array.from(e.target.files);
     for (const file of files) {
+      if (file.size > MAX_PHOTO_MB * 1024 * 1024) { alert(`Photo "${file.name}" exceeds ${MAX_PHOTO_MB}MB limit. Please resize or compress it first.`); continue; }
       const dataUrl = await new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = ev => resolve(ev.target.result);
@@ -2070,6 +2103,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   if (view === "detail" && selected) {
     const inv = data.invoices.find(i => i.id === selected.id);
     if (!inv) { setView("list"); return null; }
+    const co = data.company || {};
     const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
     const taxAmt = sub * (Number(inv.taxRate || 0) / 100);
     const total = sub + taxAmt;
@@ -2108,19 +2142,19 @@ function Invoices({ data, setData, t, initialFilter }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <Icon d={IC.upload} size={20} color={t.accent} />
             <div>
-              <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Download Invoice{data.company.customContract ? " + Custom Contract" : " + Contract"}</div>
-              <div style={{ color: t.subtext, fontSize: 11 }}>{data.company.customContract ? `Includes ${data.company.customContractName || "contract.pdf"}` : "Save to phone — share via text, email, or AirDrop"}</div>
+              <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Download Invoice{co.customContract ? " + Custom Contract" : " + Contract"}</div>
+              <div style={{ color: t.subtext, fontSize: 11 }}>{co.customContract ? `Includes ${co.customContractName || "contract.pdf"}` : "Save to phone — share via text, email, or AirDrop"}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => downloadPDF(inv)} style={{ flex: 1, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 10, padding: "14px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Icon d={IC.upload} size={16} color="#fff" /> Download {data.company.customContract ? "Both Files" : "PDF"}
+              <Icon d={IC.upload} size={16} color="#fff" /> Download {co.customContract ? "Both Files" : "PDF"}
             </button>
             <button onClick={() => printPDF(inv)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "14px 18px", color: t.subtext, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               🖨️
             </button>
           </div>
-          {data.company.customContract && (
+          {co.customContract && (
             <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
               <button onClick={() => downloadInvoiceHTML(inv)} style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px", color: t.text, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 Invoice Only
@@ -2714,7 +2748,7 @@ function Settings({ data, setData, t }) {
 }
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
-export default function App() {
+function AppInner() {
   const [data, setDataRaw] = useState(loadData);
   const [tab, setTab] = useState("dashboard");
   const [jobFilter, setJobFilter] = useState("all");
@@ -2734,7 +2768,7 @@ export default function App() {
         try {
           const cloudData = await loadFromFirestore(u.uid);
           if (cloudData) {
-            const merged = { ...defaultData(), ...cloudData };
+            const merged = safeMerge(defaultData(), cloudData);
             setDataRaw(merged);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
           }
@@ -2742,6 +2776,17 @@ export default function App() {
         setSyncing(false);
       }
     });
+  }, []);
+
+  // ── Idle session timeout (30 min) ──────────────────────────────────────────
+  useEffect(() => {
+    const IDLE_MS = 30 * 60 * 1000;
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => { if (userRef.current) { localStorage.removeItem(STORAGE_KEY); signOutUser(); } }, IDLE_MS); };
+    const events = ["mousedown", "keydown", "touchstart", "scroll"];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset)); };
   }, []);
 
   const setData = useCallback(u => {
@@ -2807,19 +2852,19 @@ export default function App() {
       {/* Top bar */}
       <div style={{ borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", backgroundColor: `${t.surface}ee` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {data.company.logo
+          {(data.company || {}).logo
             ? <img src={data.company.logo} alt="Logo" style={{ height: 36, maxWidth: 100, objectFit: "contain" }} />
             : <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ color: "#fff", fontSize: 18, fontWeight: 800 }}>C</span></div>
           }
           <div>
             <div style={{ color: t.accent, fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700 }}>Contractor CRM</div>
-            <div style={{ color: t.text, fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{data.company.name || "My Business"}</div>
+            <div style={{ color: t.text, fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{(data.company || {}).name || "My Business"}</div>
           </div>
         </div>
         {/* Clickable badge shortcuts */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {syncing && <div style={{ background: "#1e3a5f", border: "1px solid #2563eb", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#60a5fa", fontWeight: 700 }}>syncing…</div>}
-          <div onClick={signOutUser} title='Sign out' style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '3px 10px', fontSize: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
+          <div onClick={() => { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem("crm_theme"); signOutUser(); }} title='Sign out' style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '3px 10px', fontSize: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
           {unsigned > 0 && (
             <button onClick={() => goTo("invoices", "unsigned")}
               style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#a78bfa", fontWeight: 700, cursor: "pointer" }}>
@@ -2868,4 +2913,8 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
 }
