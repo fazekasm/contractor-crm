@@ -113,7 +113,7 @@ const defaultData = () => ({
   customers: [], jobs: [], estimates: [], invoices: [],
   credentials: { docs: [] },
   qboConfig: { clientId: "", realmId: "", accessToken: "" },
-  openSignConfig: { apiKey: "", proxyUrl: "", backendUrl: "" },
+  openSignConfig: { apiKey: "", proxyUrl: "", backendUrl: "https://contractor-crm-backend-production.up.railway.app" },
   aiConfig: { provider: "claude", apiKey: "", model: "claude-sonnet-4-5", openaiKey: "", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
@@ -1602,7 +1602,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const sendForSignature = async () => {
     if (!signerEmail.trim()) { setErrorMsg("Enter the customer's email address."); return; }
-    if (!isConfigured)       { setErrorMsg("Add OpenSign API key and Worker URL in Settings first."); return; }
+    if (!isConfigured)       { setErrorMsg("OpenSign backend not connected. Check Settings → OpenSign™."); return; }
 
     setPhase("sending"); setErrorMsg("");
 
@@ -1737,7 +1737,7 @@ function OpenSignSend({ inv, data, upd, t }) {
       setShowForm(false);
 
     } catch (err) {
-      setErrorMsg(err.message || "Failed to send. Check your API key and Worker URL.");
+      setErrorMsg(err.message || "Failed to send. Please try again.");
       setPhase("error");
     }
   };
@@ -1777,7 +1777,7 @@ function OpenSignSend({ inv, data, upd, t }) {
     <div style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 10, padding: 14 }}>
       <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ E-Signature via OpenSign™</div>
       <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
-        To enable one-tap signature sending, add your OpenSign API key and Worker URL in
+        To enable one-tap signature sending, sign in and check
         <strong style={{ color: "#a78bfa" }}> Settings → OpenSign™</strong>.
       </div>
       <div style={{ display: "flex", gap: 8 }}>
@@ -1890,33 +1890,26 @@ function OpenSignSend({ inv, data, upd, t }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function OpenSignSettings({ data, setData, t }) {
-  const cfg = data.openSignConfig || {};
-  const [form, setForm] = useState({
-    backendUrl: cfg.backendUrl || "",
-  });
-  const [saved, setSaved]     = useState(false);
+  const BACKEND_URL = "https://contractor-crm-backend-production.up.railway.app";
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  const save = () => {
-    setData(d => ({ ...d, openSignConfig: form }));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  // Auto-set backend URL if not already configured
+  useEffect(() => {
+    const cfg = data.openSignConfig || {};
+    if (!cfg.backendUrl || cfg.backendUrl !== BACKEND_URL) {
+      setData(d => ({ ...d, openSignConfig: { ...d.openSignConfig, backendUrl: BACKEND_URL } }));
+    }
+  }, []);
 
   const testConnection = async () => {
-    const backendUrl = (form.backendUrl || "").replace(/\/$/, "");
-    if (!backendUrl) {
-      setTestResult({ ok: false, msg: "Enter your Backend URL first." });
-      return;
-    }
     setTesting(true); setTestResult(null);
     try {
-      const res = await fetch(`${backendUrl}/health`);
+      const res = await fetch(`${BACKEND_URL}/health`);
       if (res.ok) {
-        setTestResult({ ok: true, msg: "✅ Backend reachable — ready to send documents." });
+        setTestResult({ ok: true, msg: "✅ Connected — ready to send documents." });
       } else {
-        setTestResult({ ok: false, msg: `❌ Backend returned ${res.status}. Check the URL.` });
+        setTestResult({ ok: false, msg: `❌ Backend returned ${res.status}. Try again later.` });
       }
     } catch (e) {
       setTestResult({ ok: false, msg: `❌ ${e.message}` });
@@ -1926,43 +1919,29 @@ function OpenSignSettings({ data, setData, t }) {
 
   return (
     <div>
-      {/* What this does */}
       <div style={{ background: `linear-gradient(135deg,${t.accent}15,${t.accent}05)`, border: `1px solid #7c3aed44`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
         <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ One-Tap E-Signature via OpenSign™</div>
         <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7 }}>
-          Send contracts and invoices for e-signature directly from the app. Your self-hosted OpenSign backend handles delivery — no third-party service needed. Customer receives an email, signs in their browser, and both parties get a signed PDF automatically.
+          Send contracts and invoices for e-signature directly from the app. Customer receives an email, signs in their browser, and both parties get a signed PDF automatically.
         </div>
       </div>
 
-      {/* Backend URL — primary config */}
       <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-        <div style={{ color: t.text, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Backend URL</div>
-        <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
-          Your CRM backend handles document sending securely. Enter the Railway backend URL below.
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80" }} />
+          <div style={{ color: t.text, fontSize: 12, fontWeight: 700 }}>Backend Connected</div>
         </div>
-        <input
-          value={form.backendUrl}
-          onChange={e => setForm(f => ({ ...f, backendUrl: e.target.value }))}
-          placeholder="https://contractor-crm-backend-production.up.railway.app"
-          style={{ width: "100%", background: t.surface2, border: `1px solid #7c3aed`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-        />
+        <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.7 }}>
+          All document signing requests are routed securely through your backend with Firebase authentication.
+        </div>
       </div>
 
-      {/* Test + Save */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={testConnection} disabled={testing || !form.backendUrl}
-          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer", opacity: !form.backendUrl ? 0.5 : 1 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={testConnection} disabled={testing}
+          style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer" }}>
           {testing ? "Testing..." : "Test Connection"}
         </button>
-        <button onClick={save}
-          style={{ background: saved ? "linear-gradient(135deg,#059669,#047857)" : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          {saved ? "✅ Saved!" : "Save OpenSign Settings"}
-        </button>
         {testResult && <div style={{ color: testResult.ok ? "#4ade80" : "#f87171", fontSize: 12 }}>{testResult.msg}</div>}
-      </div>
-
-      <div style={{ color: t.subtext, fontSize: 11, lineHeight: 1.7 }}>
-        💡 <strong style={{ color: t.text }}>Security:</strong> All document requests go through your own backend with Firebase authentication. No third-party proxy needed.
       </div>
     </div>
   );
