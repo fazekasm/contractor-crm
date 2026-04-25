@@ -1,6 +1,10 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  [build.environment]
+    # Firebase API keys are intentionally public (security enforced by Firestore/Storage rules + App Check)
+    # Netlify secrets scanner flags them as false positives
+    SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
 [[headers]]
   for = "/*"
