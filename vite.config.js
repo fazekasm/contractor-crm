@@ -33,7 +33,9 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        maximumFileSizeToCacheInBytes: 5000000
+        maximumFileSizeToCacheInBytes: 5000000,
+        navigateFallback: '/offline.html',
+        navigateFallbackDenylist: [/^\/api\//],
       }
     })
   ]

@@ -1,3 +1,18 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://www.google.com https://recaptcha.google.com; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://contractor-crm-backend-production.up.railway.app wss://*.firebaseio.com; img-src 'self' data: blob: https://firebasestorage.googleapis.com https://lh3.googleusercontent.com; font-src 'self' data:; frame-src https://contractor-crm-792d3.firebaseapp.com; frame-ancestors 'none'; style-src 'self' 'unsafe-inline';"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

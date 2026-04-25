@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { onAuthChange, loadFromFirestore, signInWithGoogle, signOutUser, saveToFirestore, auth } from './firebase.js'
+import { onAuthChange, loadFromFirestore, signInWithGoogle, signOutUser, saveToFirestore, auth, storage, storageRef, uploadString, getDownloadURL, deleteObject } from './firebase.js'
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
@@ -101,6 +101,7 @@ const STORAGE_KEY = "crm_v3";
 const defaultData = () => ({
   company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "", customContract: "", customContractName: "" },
   theme: { preset: "Bold Blue", custom: { ...THEMES["Bold Blue"] } },
+  lightMode: false,
   customers: [], jobs: [], estimates: [], invoices: [],
   credentials: { docs: [] },
   qboConfig: { clientId: "", realmId: "", accessToken: "" },
@@ -108,10 +109,20 @@ const defaultData = () => ({
   aiConfig: { provider: "claude", apiKey: "", model: "claude-sonnet-4-5", openaiKey: "", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
-const loadData = () => { try { return { ...defaultData(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch { return defaultData(); } };
+const loadData = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const base = { ...defaultData(), ...raw };
+    if (raw.lightMode === undefined) {
+      const themeKey = localStorage.getItem("crm_theme");
+      if (themeKey === "light") base.lightMode = true;
+    }
+    return base;
+  } catch { return defaultData(); }
+};
 let _firestoreTimer = null;
 const saveData = (d, uid) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); localStorage.setItem("crm_theme", d.lightMode ? "light" : "dark"); } catch {}
   if (uid) {
     clearTimeout(_firestoreTimer);
     _firestoreTimer = setTimeout(() => {
@@ -121,10 +132,17 @@ const saveData = (d, uid) => {
 };
 
 // ─── THEME CONTEXT ────────────────────────────────────────────────────────────
-const getTheme = (themeData) => {
-  if (!themeData) return THEMES["Bold Blue"];
-  if (themeData.preset === "Custom") return themeData.custom || THEMES["Bold Blue"];
-  return THEMES[themeData.preset] || THEMES["Bold Blue"];
+const LIGHT_OVERRIDES = {
+  bg: "#f8fafc", surface: "#ffffff", surface2: "#f1f5f9",
+  text: "#0f172a", subtext: "#64748b", muted: "#e2e8f0", border: "#e2e8f0",
+};
+
+const getTheme = (themeData, lightMode = false) => {
+  let base;
+  if (!themeData) base = THEMES["Bold Blue"];
+  else if (themeData.preset === "Custom") base = themeData.custom || THEMES["Bold Blue"];
+  else base = THEMES[themeData.preset] || THEMES["Bold Blue"];
+  return lightMode ? { ...base, ...LIGHT_OVERRIDES } : base;
 };
 
 // ─── UI PRIMITIVES ────────────────────────────────────────────────────────────
@@ -2076,20 +2094,37 @@ function Invoices({ data, setData, t, initialFilter }) {
     navigator.clipboard.writeText(text).then(() => alert("Invoice message copied to clipboard! Paste it into a text or email.")).catch(() => alert(text));
   };
 
-  const addPhoto = (inv, e) => {
+  const addPhoto = async (inv, e) => {
     const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const photo = { id: uid(), dataUrl: ev.target.result, caption: "", label: "Before" };
+    for (const file of files) {
+      const dataUrl = await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target.result);
+        reader.readAsDataURL(file);
+      });
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const path = `photos/${currentUser.uid}/${Date.now()}_${file.name}`;
+        const photoRef = storageRef(storage, path);
+        await uploadString(photoRef, dataUrl, 'data_url');
+        const url = await getDownloadURL(photoRef);
+        const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
         upd(inv.id, { photos: [...(inv.photos || []), photo] });
-      };
-      reader.readAsDataURL(file);
-    });
+      } else {
+        const photo = { id: uid(), dataUrl, caption: "", label: "Before" };
+        upd(inv.id, { photos: [...(inv.photos || []), photo] });
+      }
+    }
   };
 
   const updPhoto = (inv, photoId, patch) => upd(inv.id, { photos: (inv.photos || []).map(p => p.id === photoId ? { ...p, ...patch } : p) });
-  const delPhoto = (inv, photoId) => upd(inv.id, { photos: (inv.photos || []).filter(p => p.id !== photoId) });
+  const delPhoto = async (inv, photoId) => {
+    const photo = (inv.photos || []).find(p => p.id === photoId);
+    if (photo?.storagePath) {
+      try { await deleteObject(storageRef(storage, photo.storagePath)); } catch (e) { console.error("Storage delete error:", e); }
+    }
+    upd(inv.id, { photos: (inv.photos || []).filter(p => p.id !== photoId) });
+  };
 
   if (view === "detail" && selected) {
     const inv = data.invoices.find(i => i.id === selected.id);
@@ -2222,7 +2257,7 @@ function Invoices({ data, setData, t, initialFilter }) {
               {inv.photos.map(photo => (
                 <div key={photo.id} style={{ background: t.surface2, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                   <div style={{ position: "relative" }}>
-                    <img src={photo.dataUrl} alt={photo.caption || photo.label || "Job photo"} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                    <img src={photo.url || photo.dataUrl} alt={photo.caption || photo.label || "Job photo"} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
                     <button onClick={() => delPhoto(inv, photo.id)} style={{ position: "absolute", top: 4, right: 4, background: "#dc2626", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={IC.x} size={12} color="#fff" /></button>
                     <select value={photo.label} onChange={e => updPhoto(inv, photo.id, { label: e.target.value })} style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontFamily: "inherit" }}>
                       <option>Before</option><option>After</option><option>During</option><option>Detail</option>
@@ -2613,6 +2648,31 @@ function Settings({ data, setData, t }) {
         </div>
       </Card>
 
+      {/* Appearance — Light/Dark Mode */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>Appearance</SectionLabel>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>Dark Mode</div>
+            <div style={{ color: t.subtext, fontSize: 12, marginTop: 2 }}>Switch between dark and light interface</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: t.subtext, fontSize: 12, fontWeight: 600 }}>Light</span>
+            <label className="theme-toggle">
+              <input
+                type="checkbox"
+                checked={!data.lightMode}
+                onChange={e => setData(d => ({ ...d, lightMode: !e.target.checked }))}
+              />
+              <span className="theme-toggle-track">
+                <span className="theme-toggle-thumb" />
+              </span>
+            </label>
+            <span style={{ color: t.text, fontSize: 12, fontWeight: 600 }}>Dark</span>
+          </div>
+        </div>
+      </Card>
+
       {/* Theme Picker */}
       <Card t={t} style={{ marginBottom: 16 }}>
         <SectionLabel t={t}>Color Theme</SectionLabel>
@@ -2758,7 +2818,7 @@ export default function App() {
     setTab(tabId);
   }, []);
 
-  const t = getTheme(data.theme);
+  const t = getTheme(data.theme, data.lightMode);
 
   const tabs = [
     { id: "dashboard", label: "Home",      icon: "home" },
@@ -2802,7 +2862,7 @@ export default function App() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+    <div data-theme={data.lightMode ? "light" : "dark"} style={{ minHeight: '100vh', background: t.bg, color: t.text, colorScheme: data.lightMode ? "light" : "dark", fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
       <div style={{ borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", backgroundColor: `${t.surface}ee` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
