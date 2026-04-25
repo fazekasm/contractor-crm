@@ -23,13 +23,13 @@ class ErrorBoundary extends Component {
 
 // ─── THEME PRESETS ────────────────────────────────────────────────────────────
 const THEMES = {
-  "Bold Blue":       { accent:"#2563eb", accent2:"#1d4ed8", border:"#1e3a5f", bg:"#0d1520", surface:"#161f2e", surface2:"#0d1520", text:"#f0f6ff", subtext:"#94a3b8", muted:"#334155" },
-  "Contractor Orange":{ accent:"#ea580c", accent2:"#c2410c", border:"#431407", bg:"#0f0a05", surface:"#1a0f06", surface2:"#0f0a05", text:"#fff7ed", subtext:"#a8714a", muted:"#3c1f0a" },
-  "Forest Green":    { accent:"#16a34a", accent2:"#15803d", border:"#052e16", bg:"#030f07", surface:"#071a0e", surface2:"#030f07", text:"#f0fdf4", subtext:"#6cb88a", muted:"#0f3320" },
-  "Slate Gray":      { accent:"#64748b", accent2:"#475569", border:"#1e293b", bg:"#0f172a", surface:"#1e293b", surface2:"#0f172a", text:"#f8fafc", subtext:"#94a3b8", muted:"#334155" },
-  "Crimson Red":     { accent:"#dc2626", accent2:"#b91c1c", border:"#450a0a", bg:"#0f0505", surface:"#1a0808", surface2:"#0f0505", text:"#fff1f1", subtext:"#b87070", muted:"#3b0f0f" },
-  "Midnight Dark":   { accent:"#7c3aed", accent2:"#6d28d9", border:"#2e1065", bg:"#09050f", surface:"#130a1f", surface2:"#09050f", text:"#faf5ff", subtext:"#a78bfa", muted:"#2e1065" },
-  "Custom":          { accent:"#2563eb", accent2:"#1d4ed8", border:"#1e3a5f", bg:"#0d1520", surface:"#161f2e", surface2:"#0d1520", text:"#f0f6ff", subtext:"#94a3b8", muted:"#334155" },
+  "Bold Blue":       { accent:"#2563eb", accent2:"#1d4ed8", border:"#1e3a5f", bg:"#0d1520", surface:"#161f2e", surface2:"#0d1520", text:"#f0f6ff", subtext:"#94a3b8", muted:"#64748b" },
+  "Contractor Orange":{ accent:"#ea580c", accent2:"#c2410c", border:"#431407", bg:"#0f0a05", surface:"#1a0f06", surface2:"#0f0a05", text:"#fff7ed", subtext:"#c89b6e", muted:"#8b6d4a" },
+  "Forest Green":    { accent:"#16a34a", accent2:"#15803d", border:"#052e16", bg:"#030f07", surface:"#071a0e", surface2:"#030f07", text:"#f0fdf4", subtext:"#86cba3", muted:"#4a8b66" },
+  "Slate Gray":      { accent:"#64748b", accent2:"#475569", border:"#1e293b", bg:"#0f172a", surface:"#1e293b", surface2:"#0f172a", text:"#f8fafc", subtext:"#94a3b8", muted:"#64748b" },
+  "Crimson Red":     { accent:"#dc2626", accent2:"#b91c1c", border:"#450a0a", bg:"#0f0505", surface:"#1a0808", surface2:"#0f0505", text:"#fff1f1", subtext:"#d49090", muted:"#8b5050" },
+  "Midnight Dark":   { accent:"#7c3aed", accent2:"#6d28d9", border:"#2e1065", bg:"#09050f", surface:"#130a1f", surface2:"#09050f", text:"#faf5ff", subtext:"#a78bfa", muted:"#7c6aad" },
+  "Custom":          { accent:"#2563eb", accent2:"#1d4ed8", border:"#1e3a5f", bg:"#0d1520", surface:"#161f2e", surface2:"#0d1520", text:"#f0f6ff", subtext:"#94a3b8", muted:"#64748b" },
 };
 
 // ─── CONTRACTOR AI SYSTEM PROMPT ─────────────────────────────────────────────
@@ -101,15 +101,18 @@ const IC = {
 
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 const STATUSES = [
-  { key:"lead",      label:"Lead",           color:"#64748b", bg:"#1e293b" },
-  { key:"estimate",  label:"Estimate Sent",  color:"#f59e0b", bg:"#451a03" },
-  { key:"approved",  label:"Approved",       color:"#06b6d4", bg:"#083344" },
-  { key:"active",    label:"In Progress",    color:"#8b5cf6", bg:"#2e1065" },
-  { key:"complete",  label:"Complete",       color:"#10b981", bg:"#022c22" },
-  { key:"invoiced",  label:"Invoiced",       color:"#f97316", bg:"#431407" },
-  { key:"paid",      label:"Paid",           color:"#4ade80", bg:"#052e16" },
+  { key:"lead",      label:"Lead",           color:"#64748b", bg:"#1e293b", lightColor:"#475569", lightBg:"#f1f5f9" },
+  { key:"estimate",  label:"Estimate Sent",  color:"#f59e0b", bg:"#451a03", lightColor:"#b45309", lightBg:"#fef3c7" },
+  { key:"approved",  label:"Approved",       color:"#06b6d4", bg:"#083344", lightColor:"#0e7490", lightBg:"#cffafe" },
+  { key:"active",    label:"In Progress",    color:"#8b5cf6", bg:"#2e1065", lightColor:"#7c3aed", lightBg:"#ede9fe" },
+  { key:"complete",  label:"Complete",       color:"#10b981", bg:"#022c22", lightColor:"#059669", lightBg:"#d1fae5" },
+  { key:"invoiced",  label:"Invoiced",       color:"#f97316", bg:"#431407", lightColor:"#c2410c", lightBg:"#ffedd5" },
+  { key:"paid",      label:"Paid",           color:"#4ade80", bg:"#052e16", lightColor:"#16a34a", lightBg:"#dcfce7" },
 ];
-const statusFor = k => STATUSES.find(s => s.key === k) || STATUSES[0];
+const statusFor = (k, light = false) => {
+  const s = STATUSES.find(s => s.key === k) || STATUSES[0];
+  return light ? { ...s, color: s.lightColor, bg: s.lightBg } : s;
+};
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -186,7 +189,7 @@ const saveData = (d, uid) => {
 // ─── THEME CONTEXT ────────────────────────────────────────────────────────────
 const LIGHT_OVERRIDES = {
   bg: "#f8fafc", surface: "#ffffff", surface2: "#f1f5f9",
-  text: "#0f172a", subtext: "#64748b", muted: "#e2e8f0", border: "#e2e8f0",
+  text: "#0f172a", subtext: "#475569", muted: "#94a3b8", border: "#cbd5e1",
 };
 
 const getTheme = (themeData, lightMode = false) => {
@@ -278,8 +281,8 @@ const Sel = ({ label, value, onChange, options, t }) => (
   </div>
 );
 
-const Badge = ({ status }) => {
-  const s = statusFor(status);
+const Badge = ({ status, light }) => {
+  const s = statusFor(status, light);
   return <span style={{ background: s.bg, color: s.color, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", border: `1px solid ${s.color}33`, whiteSpace: "nowrap" }}>{s.label}</span>;
 };
 
@@ -472,13 +475,16 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
       <Card t={t} style={{ marginBottom: 16 }}>
         <SectionLabel t={t}>Pipeline — Tap any stage to filter jobs</SectionLabel>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {STATUSES.map(s => (
+          {STATUSES.map(s => {
+            const ds = data.lightMode ? { bg: s.lightBg, color: s.lightColor } : { bg: s.bg, color: s.color };
+            return (
             <button key={s.key} onClick={() => goJobs(s.key)}
-              style={{ background: s.bg, border: `1px solid ${s.color}44`, borderRadius: 8, padding: "8px 10px", textAlign: "center", flex: "1 1 60px", cursor: "pointer", fontFamily: "inherit" }}>
-              <div style={{ color: s.color, fontSize: 20, fontWeight: 800 }}>{statusCounts[s.key] || 0}</div>
-              <div style={{ color: "#64748b", fontSize: 10 }}>{s.label}</div>
+              style={{ background: ds.bg, border: `1px solid ${ds.color}44`, borderRadius: 8, padding: "8px 10px", textAlign: "center", flex: "1 1 60px", cursor: "pointer", fontFamily: "inherit" }}>
+              <div style={{ color: ds.color, fontSize: 20, fontWeight: 800 }}>{statusCounts[s.key] || 0}</div>
+              <div style={{ color: t.subtext, fontSize: 10 }}>{s.label}</div>
             </button>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
@@ -509,7 +515,7 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
                 <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{job.title}</div>
                 <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName}</div>
               </div>
-              <Badge status={job.status} />
+              <Badge status={job.status} light={data.lightMode} />
             </button>
           ))}
       </Card>
@@ -716,7 +722,7 @@ function Jobs({ data, setData, t, initialFilter }) {
                     </div>
                   )}
                 </div>
-                <Badge status={job.status} />
+                <Badge status={job.status} light={data.lightMode} />
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <select value={job.status} onChange={e => updateStatus(job.id, e.target.value)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 10px", color: t.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
@@ -908,19 +914,19 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
   );
 
   return (
-    <div style={{ background: "#130520", border: "2px solid #7c3aed", borderRadius: 14, padding: 18, marginBottom: 16 }}>
+    <div style={{ background: `${t.accent}10`, border: `2px solid ${t.accent}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 18 }}>✨</span>
-          <div><div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>AI Estimate Generator</div><div style={{ color: "#a78bfa", fontSize: 10 }}>{provider === "openai" ? "🟢 ChatGPT" : "🟣 Claude"} · {aiConfig?.region || "Your market"}</div></div>
+          <div><div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>AI Estimate Generator</div><div style={{ color: t.accent, fontSize: 10 }}>{provider === "openai" ? "🟢 ChatGPT" : "🟣 Claude"} · {aiConfig?.region || "Your market"}</div></div>
         </div>
-        <button onClick={() => { setOpen(false); setPhase("idle"); setResult(null); setError(null); }} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16 }}>✕</button>
+        <button onClick={() => { setOpen(false); setPhase("idle"); setResult(null); setError(null); }} style={{ background: "none", border: "none", color: t.subtext, cursor: "pointer", fontSize: 16 }}>✕</button>
       </div>
 
       {(phase === "idle" || phase === "error") && (
         <>
-          <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>Describe the job — the more detail the better:</div>
-          <textarea value={jobDesc} onChange={e => setJobDesc(e.target.value)} rows={5} placeholder={"Examples:\n\"750 sq ft master bath gut remodel — demo tile, 24x24 porcelain floors, tile shower, double vanity, toilet, paint\"\n\n\"Replace 200 lf cedar fence, 6ft dog-ear, remove old, new concrete footings\""} style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 10, padding: "12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.6 }} />
+          <div style={{ color: t.subtext, fontSize: 12, marginBottom: 8 }}>Describe the job — the more detail the better:</div>
+          <textarea value={jobDesc} onChange={e => setJobDesc(e.target.value)} rows={5} placeholder={"Examples:\n\"750 sq ft master bath gut remodel — demo tile, 24x24 porcelain floors, tile shower, double vanity, toilet, paint\"\n\n\"Replace 200 lf cedar fence, 6ft dog-ear, remove old, new concrete footings\""} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.6 }} />
           {error && <div style={{ color: "#f87171", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "#450a0a", borderRadius: 8 }}>⚠️ {error}</div>}
           <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
             <button onClick={generate} disabled={!jobDesc.trim()} style={{ flex: 1, background: "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: !jobDesc.trim() ? "not-allowed" : "pointer", opacity: !jobDesc.trim() ? 0.5 : 1 }}>Generate Estimate →</button>
@@ -931,34 +937,34 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
       {phase === "generating" && (
         <div style={{ textAlign: "center", padding: "28px 0" }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>⚙️</div>
-          <div style={{ color: "#a78bfa", fontSize: 14, fontWeight: 600 }}>{provider === "openai" ? "ChatGPT" : "Claude"} is building your estimate...</div>
-          <div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>Analyzing scope and pricing line items</div>
+          <div style={{ color: t.accent, fontSize: 14, fontWeight: 600 }}>{provider === "openai" ? "ChatGPT" : "Claude"} is building your estimate...</div>
+          <div style={{ color: t.subtext, fontSize: 11, marginTop: 4 }}>Analyzing scope and pricing line items</div>
         </div>
       )}
 
       {phase === "done" && result && (
         <>
-          {result.scopeSummary && <div style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 12, marginBottom: 12 }}><div style={{ color: "#4ade80", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Scope Summary</div><div style={{ color: "#d1fae5", fontSize: 12, lineHeight: 1.7 }}>{result.scopeSummary}</div></div>}
+          {result.scopeSummary && <div style={{ background: `${t.accent}10`, border: `1px solid #16a34a`, borderRadius: 10, padding: 12, marginBottom: 12 }}><div style={{ color: "#16a34a", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Scope Summary</div><div style={{ color: t.text, fontSize: 12, lineHeight: 1.7 }}>{result.scopeSummary}</div></div>}
           <div style={{ marginBottom: 12 }}>
-            <div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Line Items ({result.lines?.length || 0})</div>
+            <div style={{ color: t.subtext, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Line Items ({result.lines?.length || 0})</div>
             <div style={{ maxHeight: 260, overflowY: "auto" }}>
               {(result.lines || []).map((l, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "7px 10px", background: "#0d1520", borderRadius: 7, marginBottom: 3, gap: 8 }}>
-                  <div style={{ flex: 1 }}><div style={{ color: "#e2e8f0", fontSize: 12 }}>{l.description}</div><div style={{ color: "#64748b", fontSize: 10, marginTop: 1 }}>{l.qty} {l.unit} · <span style={{ color: l.type === "labor" ? "#60a5fa" : l.type === "material" ? "#f59e0b" : "#a78bfa" }}>{l.type}</span></div></div>
-                  <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>${(Number(l.qty)*Number(l.unitPrice)).toLocaleString()}</div>
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "7px 10px", background: t.surface2, borderRadius: 7, marginBottom: 3, gap: 8 }}>
+                  <div style={{ flex: 1 }}><div style={{ color: t.text, fontSize: 12 }}>{l.description}</div><div style={{ color: t.subtext, fontSize: 10, marginTop: 1 }}>{l.qty} {l.unit} · <span style={{ color: l.type === "labor" ? "#3b82f6" : l.type === "material" ? "#d97706" : "#7c3aed" }}>{l.type}</span></div></div>
+                  <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>${(Number(l.qty)*Number(l.unitPrice)).toLocaleString()}</div>
                 </div>
               ))}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 10px 0", borderTop: "1px solid #1e2d40", marginTop: 6 }}>
-              <span style={{ color: "#94a3b8", fontSize: 13 }}>Estimated Total</span>
-              <span style={{ color: "#4ade80", fontSize: 18, fontWeight: 800 }}>${(result.lines||[]).reduce((s,l)=>s+Number(l.qty)*Number(l.unitPrice),0).toLocaleString()}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 10px 0", borderTop: `1px solid ${t.border}`, marginTop: 6 }}>
+              <span style={{ color: t.subtext, fontSize: 13 }}>Estimated Total</span>
+              <span style={{ color: "#16a34a", fontSize: 18, fontWeight: 800 }}>${(result.lines||[]).reduce((s,l)=>s+Number(l.qty)*Number(l.unitPrice),0).toLocaleString()}</span>
             </div>
           </div>
-          {result.warnings?.length > 0 && <div style={{ background: "#451a03", border: "1px solid #f59e0b", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#fcd34d", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>⚠️ REVIEW BEFORE SENDING</div>{result.warnings.map((w,i) => <div key={i} style={{ color: "#fde68a", fontSize: 11, marginBottom: 2 }}>• {w}</div>)}</div>}
-          {result.notes && <div style={{ background: "#0f172a", border: "1px solid #1e2d40", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#64748b", fontSize: 10, fontWeight: 700, marginBottom: 3 }}>ASSUMPTIONS & EXCLUSIONS</div><div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.6 }}>{typeof result.notes === 'string' ? result.notes : JSON.stringify(result.notes)}</div></div>}
+          {result.warnings?.length > 0 && <div style={{ background: "#fef3c7", border: "1px solid #d97706", borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: "#92400e", fontSize: 10, fontWeight: 700, marginBottom: 4 }}>⚠️ REVIEW BEFORE SENDING</div>{result.warnings.map((w,i) => <div key={i} style={{ color: "#78350f", fontSize: 11, marginBottom: 2 }}>• {w}</div>)}</div>}
+          {result.notes && <div style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: 10, marginBottom: 10 }}><div style={{ color: t.subtext, fontSize: 10, fontWeight: 700, marginBottom: 3 }}>ASSUMPTIONS & EXCLUSIONS</div><div style={{ color: t.text, fontSize: 11, lineHeight: 1.6 }}>{typeof result.notes === 'string' ? result.notes : JSON.stringify(result.notes)}</div></div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={applyEstimate} style={{ flex: 1, background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✅ Apply to Estimate</button>
-            <button onClick={() => { setPhase("idle"); setResult(null); }} style={{ background: "#1e2d40", border: "1px solid #334155", borderRadius: 8, padding: "12px 14px", color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>↺ Redo</button>
+            <button onClick={() => { setPhase("idle"); setResult(null); }} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "12px 14px", color: t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>↺ Redo</button>
           </div>
         </>
       )}
@@ -1802,33 +1808,33 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   // Not yet configured
   if (!isConfigured) return (
-    <div style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 10, padding: 14 }}>
-      <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ E-Signature via OpenSign™</div>
-      <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
+    <div style={{ background: `${t.accent}08`, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ color: t.accent, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ E-Signature via OpenSign™</div>
+      <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
         To enable one-tap signature sending, sign in and check
-        <strong style={{ color: "#a78bfa" }}> Settings → OpenSign™</strong>.
+        <strong style={{ color: t.accent }}> Settings → OpenSign™</strong>.
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         {isSent
-          ? <div style={{ color: "#4ade80", fontSize: 12 }}>🔗 Manual link saved — customer can still sign</div>
-          : <div style={{ color: "#334155", fontSize: 12 }}>Manual: paste a signing link below</div>
+          ? <div style={{ color: "#16a34a", fontSize: 12 }}>🔗 Manual link saved — customer can still sign</div>
+          : <div style={{ color: t.subtext, fontSize: 12 }}>Manual: paste a signing link below</div>
         }
       </div>
       {/* Manual link fallback always available */}
       <input value={inv.openSignUrl || ""} onChange={e => upd(inv.id, { openSignUrl: e.target.value })}
         placeholder="Or paste an OpenSign link manually..."
-        style={{ width: "100%", marginTop: 8, background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        style={{ width: "100%", marginTop: 8, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
     </div>
   );
 
   // Already signed
   if (isSigned) return (
-    <div style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
+    <div style={{ background: data.lightMode ? "#dcfce7" : "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 20 }}>✅</span>
         <div>
-          <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>Contract Signed</div>
-          <div style={{ color: "#6b7280", fontSize: 11 }}>Signed {fmtDate(inv.signedAt)} · {inv.openSignSentTo || ""}</div>
+          <div style={{ color: data.lightMode ? "#16a34a" : "#4ade80", fontSize: 13, fontWeight: 700 }}>Contract Signed</div>
+          <div style={{ color: t.subtext, fontSize: 11 }}>Signed {fmtDate(inv.signedAt)} · {inv.openSignSentTo || ""}</div>
         </div>
       </div>
     </div>
@@ -1836,13 +1842,13 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   // Sent, awaiting signature
   if (isSent && !showForm) return (
-    <div style={{ background: "#1a0a2e", border: "1px solid #7c3aed", borderRadius: 10, padding: 14 }}>
+    <div style={{ background: `${t.accent}08`, border: `1px solid ${t.accent}`, borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <span style={{ fontSize: 20, flexShrink: 0 }}>📧</span>
         <div style={{ flex: 1 }}>
-          <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700 }}>Sent for Signature</div>
-          <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>
-            Sent to <strong style={{ color: "#e2e8f0" }}>{inv.openSignSentTo}</strong>
+          <div style={{ color: t.accent, fontSize: 13, fontWeight: 700 }}>Sent for Signature</div>
+          <div style={{ color: t.subtext, fontSize: 11, marginTop: 2 }}>
+            Sent to <strong style={{ color: t.text }}>{inv.openSignSentTo}</strong>
             {inv.openSignSentAt ? ` on ${fmtDate(inv.openSignSentAt)}` : ""}
           </div>
         </div>
@@ -1853,16 +1859,16 @@ function OpenSignSend({ inv, data, upd, t }) {
       <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         {inv.openSignUrl && (
           <button onClick={() => { navigator.clipboard.writeText(inv.openSignUrl); alert("Signing link copied!"); }}
-            style={{ background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 6, padding: "6px 12px", color: "#a78bfa", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            style={{ background: t.surface2, border: `1px solid ${t.accent}`, borderRadius: 6, padding: "6px 12px", color: t.accent, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
             📋 Copy Signing Link
           </button>
         )}
         <button onClick={resendReminder} disabled={phase === "sending"}
-          style={{ background: "#0d1520", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 12px", color: t.subtext, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           {phase === "sending" ? "Sending..." : "🔔 Resend Reminder Email"}
         </button>
         <button onClick={() => setShowForm(true)}
-          style={{ background: "#0d1520", border: "1px solid #334155", borderRadius: 6, padding: "6px 12px", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 12px", color: t.subtext, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           ✉️ Resend to Different Email
         </button>
       </div>
@@ -1871,25 +1877,25 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   // Send form
   return (
-    <div style={{ background: "#1a0a2e", border: "2px solid #7c3aed", borderRadius: 10, padding: 14 }}>
+    <div style={{ background: `${t.accent}10`, border: `2px solid ${t.accent}`, borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700 }}>✍️ Send for Signature via OpenSign™</div>
-        {isSent && <button onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14 }}>✕</button>}
+        <div style={{ color: t.accent, fontSize: 13, fontWeight: 700 }}>✍️ Send for Signature via OpenSign™</div>
+        {isSent && <button onClick={() => setShowForm(false)} style={{ background: "none", border: "none", color: t.subtext, cursor: "pointer", fontSize: 14 }}>✕</button>}
       </div>
-      <div style={{ color: "#64748b", fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+      <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
         OpenSign will email the customer a signing link. They sign in their browser — no account needed. Both parties get a completion certificate automatically.
       </div>
       <div style={{ marginBottom: 10 }}>
-        <label style={{ display: "block", color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Name</label>
+        <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Name</label>
         <input value={signerName} onChange={e => setSignerName(e.target.value)}
           placeholder="Customer full name"
-          style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
       </div>
       <div style={{ marginBottom: 12 }}>
-        <label style={{ display: "block", color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Email <span style={{ color: "#ef4444" }}>*</span></label>
+        <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Email <span style={{ color: "#ef4444" }}>*</span></label>
         <input type="email" value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
           placeholder="customer@email.com"
-          style={{ width: "100%", background: "#0d1520", border: "1px solid #4c1d95", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
       </div>
       {errorMsg && (
         <div style={{ background: "#450a0a", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 12px", marginBottom: 10, color: "#f87171", fontSize: 12 }}>
@@ -1903,7 +1909,7 @@ function OpenSignSend({ inv, data, upd, t }) {
           : <>✍️ Send Contract for Signature</>
         }
       </button>
-      <div style={{ color: "#334155", fontSize: 10, marginTop: 8, textAlign: "center" }}>
+      <div style={{ color: t.subtext, fontSize: 10, marginTop: 8, textAlign: "center" }}>
         Customer will receive an email from OpenSign with a secure signing link. No OpenSign account required for them.
       </div>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -2119,7 +2125,7 @@ function Invoices({ data, setData, t, initialFilter }) {
           </div>
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
             <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
-            <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span>
+            <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span>
           </div>
         </div>
 
@@ -2357,7 +2363,7 @@ function Invoices({ data, setData, t, initialFilter }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
-                  <span style={{ background: inv.status === "paid" ? "#052e16" : "#431407", color: inv.status === "paid" ? "#4ade80" : "#f97316", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                  <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
                     {inv.status === "paid" ? "✓ PAID" : "UNPAID"}
                   </span>
                 </div>
@@ -2452,7 +2458,7 @@ function Calendar({ data, setData, t, setTab }) {
                 <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName}</div>
                 {job.value && <div style={{ color: t.accent, fontSize: 12 }}>{fmt$(job.value)}</div>}
               </div>
-              <Badge status={job.status} />
+              <Badge status={job.status} light={data.lightMode} />
             </div>
           ))}
         </Card>
@@ -2471,7 +2477,7 @@ function Calendar({ data, setData, t, setTab }) {
                     <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{job.title}</div>
                     <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName} · {fmtDate(job.date)}</div>
                   </div>
-                  <Badge status={job.status} />
+                  <Badge status={job.status} light={data.lightMode} />
                 </div>
               ))}
         </Card>
@@ -2863,17 +2869,17 @@ function AppInner() {
         </div>
         {/* Clickable badge shortcuts */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {syncing && <div style={{ background: "#1e3a5f", border: "1px solid #2563eb", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#60a5fa", fontWeight: 700 }}>syncing…</div>}
-          <div onClick={() => { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem("crm_theme"); signOutUser(); }} title='Sign out' style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 20, padding: '3px 10px', fontSize: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
+          {syncing && <div style={{ background: data.lightMode ? "#dbeafe" : "#1e3a5f", border: `1px solid ${t.accent}`, borderRadius: 20, padding: "3px 8px", fontSize: 10, color: data.lightMode ? "#2563eb" : "#60a5fa", fontWeight: 700 }}>syncing…</div>}
+          <div onClick={() => { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem("crm_theme"); signOutUser(); }} title='Sign out' style={{ background: data.lightMode ? "#f1f5f9" : "#1e293b", border: `1px solid ${t.border}`, borderRadius: 20, padding: '3px 10px', fontSize: 10, color: t.subtext, fontWeight: 700, cursor: 'pointer' }}>{user?.displayName?.split(' ')[0] || 'Me'} ↗</div>
           {unsigned > 0 && (
             <button onClick={() => goTo("invoices", "unsigned")}
-              style={{ background: "#2e1065", border: "1px solid #7c3aed", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#a78bfa", fontWeight: 700, cursor: "pointer" }}>
+              style={{ background: data.lightMode ? "#ede9fe" : "#2e1065", border: `1px solid ${data.lightMode ? "#7c3aed" : "#7c3aed"}`, borderRadius: 20, padding: "3px 8px", fontSize: 10, color: data.lightMode ? "#6d28d9" : "#a78bfa", fontWeight: 700, cursor: "pointer" }}>
               {unsigned} unsigned
             </button>
           )}
           {unpaid > 0 && (
             <button onClick={() => goTo("invoices", "unpaid")}
-              style={{ background: "#431407", border: "1px solid #f97316", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#f97316", fontWeight: 700, cursor: "pointer" }}>
+              style={{ background: data.lightMode ? "#ffedd5" : "#431407", border: `1px solid ${data.lightMode ? "#ea580c" : "#f97316"}`, borderRadius: 20, padding: "3px 8px", fontSize: 10, color: data.lightMode ? "#c2410c" : "#f97316", fontWeight: 700, cursor: "pointer" }}>
               {unpaid} unpaid
             </button>
           )}
