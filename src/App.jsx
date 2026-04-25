@@ -95,7 +95,15 @@ const statusFor = k => STATUSES.find(s => s.key === k) || STATUSES[0];
 const uid = () => Math.random().toString(36).slice(2, 10);
 const fmt$ = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().split("T")[0];
-const fmtDate = d => d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+const fmtDate = d => {
+  if (!d) return "—";
+  try {
+    // Handle Firestore Timestamps (have .toDate() or .seconds)
+    if (typeof d === "object" && d.toDate) return d.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    if (typeof d === "object" && d.seconds) return new Date(d.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  } catch { return "—"; }
+};
 const STORAGE_KEY = "crm_v3";
 
 const defaultData = () => ({
@@ -257,7 +265,7 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
         ${inv.photos.map(p => `
           <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
-            <img src="${p.dataUrl}" style="width:100%;height:140px;object-fit:cover;display:block"/>
+            <img src="${p.url || p.dataUrl}" style="width:100%;height:140px;object-fit:cover;display:block"/>
             ${p.caption ? `<div style="padding:6px 8px;font-size:11px;color:#6b7280;background:#f9fafb">${p.caption}${p.label ? ` · <strong>${p.label}</strong>` : ""}</div>` : ""}
           </div>`).join("")}
       </div>
@@ -686,8 +694,6 @@ function AISettings({ data, setData, t }) {
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [showKey, setShowKey] = useState(false);
-
   const save = () => {
     const provider = ai.provider || "claude";
     // When saving, ensure the active provider's model is always a valid string default
@@ -704,34 +710,24 @@ function AISettings({ data, setData, t }) {
   };
 
   const testConnection = async () => {
+    if (!auth.currentUser) { setTestResult({ ok: false, msg: "Sign in first to test the connection." }); return; }
     const provider = ai.provider || "claude";
-    if (provider === "openai") {
-      if (!ai.openaiKey) { setTestResult({ ok: false, msg: "Enter your OpenAI API key first." }); return; }
-      setTesting(true); setTestResult(null);
-      try {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${ai.openaiKey}` },
-          body: JSON.stringify({ model: ai.openaiModel || "gpt-4o-mini", max_tokens: 10, messages: [{ role: "user", content: "Reply only: API_OK" }] })
-        });
-        const d = await res.json();
-        if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
-        else setTestResult({ ok: true, msg: "✅ Connected! OpenAI key is working." });
-      } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
-    } else {
-      if (!ai.apiKey) { setTestResult({ ok: false, msg: "Enter your Anthropic API key first." }); return; }
-      setTesting(true); setTestResult(null);
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": ai.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-          body: JSON.stringify({ model: ai.model || "claude-sonnet-4-5", max_tokens: 30, messages: [{ role: "user", content: "Reply only: API_OK" }] })
-        });
-        const d = await res.json();
-        if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error.message}` });
-        else setTestResult({ ok: true, msg: "✅ Connected! API key is working." });
-      } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
-    }
+    setTesting(true); setTestResult(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const endpoint = provider === "openai"
+        ? "https://contractor-crm-backend-production.up.railway.app/api/ai/openai"
+        : "https://contractor-crm-backend-production.up.railway.app/api/ai/claude";
+      const model = provider === "openai" ? (ai.openaiModel || "gpt-4o-mini") : (ai.model || "claude-sonnet-4-5");
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({ prompt: "Reply only: API_OK", systemPrompt: "You are a helpful assistant.", model })
+      });
+      const d = await res.json();
+      if (d.error) setTestResult({ ok: false, msg: `❌ ${d.error}` });
+      else setTestResult({ ok: true, msg: `✅ Connected! ${provider === "openai" ? "OpenAI" : "Claude"} is working.` });
+    } catch (e) { setTestResult({ ok: false, msg: `❌ ${e.message}` }); }
     setTesting(false);
   };
 
@@ -758,42 +754,22 @@ function AISettings({ data, setData, t }) {
         </div>
 
         {(ai.provider || "claude") === "claude" ? (
-          <>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Anthropic API Key <span style={{ color: "#ef4444" }}>*</span></label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type={showKey ? "text" : "password"} value={ai.apiKey || ""} onChange={e => setAi(a => ({ ...a, apiKey: e.target.value }))} placeholder="sk-ant-api03-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-                <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
-              </div>
-              <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get key at <a href="https://console.anthropic.com" target="_blank" style={{ color: t.accent }}>console.anthropic.com</a> → API Keys. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
-              <select value={ai.model || "claude-sonnet-4-5"} onChange={e => setAi(a => ({ ...a, model: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                <option value="claude-sonnet-4-5">Claude Sonnet 4.5 — Fast & affordable ★ Recommended</option>
-                <option value="claude-opus-4-5">Claude Opus 4.5 — Most powerful, slower & costlier</option>
-                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest, lowest cost</option>
-              </select>
-            </div>
-          </>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
+            <select value={ai.model || "claude-sonnet-4-5"} onChange={e => setAi(a => ({ ...a, model: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+              <option value="claude-sonnet-4-5">Claude Sonnet 4.5 — Fast & affordable ★ Recommended</option>
+              <option value="claude-opus-4-5">Claude Opus 4.5 — Most powerful, slower & costlier</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest, lowest cost</option>
+            </select>
+          </div>
         ) : (
-          <>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>OpenAI API Key <span style={{ color: "#ef4444" }}>*</span></label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type={showKey ? "text" : "password"} value={ai.openaiKey || ""} onChange={e => setAi(a => ({ ...a, openaiKey: e.target.value }))} placeholder="sk-..." style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-                <button onClick={() => setShowKey(s => !s)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "0 10px", color: t.subtext, cursor: "pointer" }}>{showKey ? "🙈" : "👁"}</button>
-              </div>
-              <div style={{ color: t.subtext, fontSize: 11, marginTop: 5, lineHeight: 1.6 }}>Get key at <a href="https://platform.openai.com/api-keys" target="_blank" style={{ color: t.accent }}>platform.openai.com/api-keys</a>. <strong style={{ color: "#4ade80" }}>Stored only on this device.</strong></div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
-              <select value={ai.openaiModel || "gpt-4o-mini"} onChange={e => setAi(a => ({ ...a, openaiModel: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                <option value="gpt-4o-mini">GPT-4o mini — Fast & affordable ★ Recommended</option>
-                <option value="gpt-4o">GPT-4o — Most capable, higher cost</option>
-              </select>
-            </div>
-          </>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Model</label>
+            <select value={ai.openaiModel || "gpt-4o-mini"} onChange={e => setAi(a => ({ ...a, openaiModel: e.target.value }))} style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+              <option value="gpt-4o-mini">GPT-4o mini — Fast & affordable ★ Recommended</option>
+              <option value="gpt-4o">GPT-4o — Most capable, higher cost</option>
+            </select>
+          </div>
         )}
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={testConnection} disabled={testing} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "9px 16px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: testing ? "not-allowed" : "pointer" }}>{testing ? "Testing..." : "Test Connection"}</button>
@@ -840,36 +816,29 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
   const [phase, setPhase] = useState("idle");
 
   const provider = aiConfig?.provider || "claude";
-  const hasKey = provider === "openai" ? aiConfig?.openaiKey?.startsWith("sk-") : aiConfig?.apiKey?.startsWith("sk-ant");
+  const hasKey = !!auth.currentUser;
 
   const generate = async () => {
     if (!jobDesc.trim()) return;
-    if (!hasKey) { setError(`Add your ${provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings → AI Estimator first.`); return; }
+    if (!auth.currentUser) { setError("Sign in to use AI Estimator."); return; }
     setLoading(true); setPhase("generating"); setResult(null); setError(null);
     const rates = aiConfig?.laborRates || {};
     const rateStr = Object.entries(rates).map(([k, v]) => `${k}: $${v}/hr`).join(", ");
     const userMsg = `MARKET: ${aiConfig?.region || "Not specified"}\nMARKUP: ${aiConfig?.markup || 20}%\nLABOR RATES: ${rateStr}\nCUSTOM INSTRUCTIONS: ${aiConfig?.customInstructions || "None"}\n\nJOB:\n${jobDesc}\n\nReturn ONLY the JSON object.`;
     try {
-      let text = "";
-      if (provider === "openai") {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${aiConfig.openaiKey}` },
-          body: JSON.stringify({ model: aiConfig.openaiModel || "gpt-4o-mini", max_tokens: 4096, messages: [{ role: "system", content: CONTRACTOR_SYSTEM_PROMPT }, { role: "user", content: userMsg }] })
-        });
-        const d = await res.json();
-        if (d.error) throw new Error(d.error.message);
-        text = d.choices?.[0]?.message?.content || "";
-      } else {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": aiConfig.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-          body: JSON.stringify({ model: aiConfig.model || "claude-sonnet-4-5", max_tokens: 4096, system: CONTRACTOR_SYSTEM_PROMPT, messages: [{ role: "user", content: userMsg }] })
-        });
-        const d = await res.json();
-        if (d.error) throw new Error(d.error.message);
-        text = d.content?.[0]?.text || "";
-      }
+      const idToken = await auth.currentUser.getIdToken();
+      const endpoint = provider === "openai"
+        ? "https://contractor-crm-backend-production.up.railway.app/api/ai/openai"
+        : "https://contractor-crm-backend-production.up.railway.app/api/ai/claude";
+      const model = provider === "openai" ? (aiConfig?.openaiModel || "gpt-4o-mini") : (aiConfig?.model || "claude-sonnet-4-5");
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({ prompt: userMsg, systemPrompt: CONTRACTOR_SYSTEM_PROMPT, model })
+      });
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+      const text = d.text || d.content || "";
       const clean = text.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
       const parsed = JSON.parse(clean);
       setResult(parsed); setPhase("done");
@@ -890,7 +859,7 @@ function AIEstimatePanel({ aiConfig, onApply, t }) {
   if (!open) return (
     <button onClick={() => setOpen(true)} style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 10, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14 }}>
       <span style={{ fontSize: 16 }}>✨</span> AI Generate Estimate
-      {!hasKey && <span style={{ background: "#fbbf24", color: "#000", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 800 }}>API KEY NEEDED</span>}
+      {!hasKey && <span style={{ background: "#fbbf24", color: "#000", borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 800 }}>SIGN IN REQUIRED</span>}
     </button>
   );
 
@@ -958,35 +927,28 @@ function AIScopeWriter({ aiConfig, lines, jobTitle, onApply, t }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const provider = aiConfig?.provider || "claude";
-  const hasKey = provider === "openai" ? aiConfig?.openaiKey?.startsWith("sk-") : aiConfig?.apiKey?.startsWith("sk-ant");
+  const hasKey = !!auth.currentUser;
   const scopeSystem = "You are an expert construction contract writer. Write professional scope of work language. Clear, specific, third-person present tense. Include what IS and IS NOT included. No bullet points — flowing professional prose suitable for a legal contract. Under 150 words.";
 
   const generateScope = async () => {
-    if (!hasKey) { setError(`Add ${provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings → AI Estimator.`); return; }
+    if (!auth.currentUser) { setError("Sign in to use AI features."); return; }
     setLoading(true); setError(null);
     const linesSummary = (lines || []).filter(l => l.description).map(l => `- ${l.description}: ${l.qty} ${l.unit} @ $${l.unitPrice}`).join("\n");
     const userContent = `Write scope of work for:\nJob: ${jobTitle || "Remodeling Project"}\nMarket: ${aiConfig?.region || "US"}\nInstructions: ${aiConfig?.customInstructions || "None"}\nLine Items:\n${linesSummary || "General remodeling work"}`;
     try {
-      let text = "";
-      if (provider === "openai") {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${aiConfig.openaiKey}` },
-          body: JSON.stringify({ model: aiConfig.openaiModel || "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: scopeSystem }, { role: "user", content: userContent }] })
-        });
-        const d = await res.json();
-        if (d.error) throw new Error(d.error.message);
-        text = d.choices?.[0]?.message?.content || "";
-      } else {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": aiConfig.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-          body: JSON.stringify({ model: aiConfig.model || "claude-sonnet-4-5", max_tokens: 600, system: scopeSystem, messages: [{ role: "user", content: userContent }] })
-        });
-        const d = await res.json();
-        if (d.error) throw new Error(d.error.message);
-        text = d.content?.[0]?.text || "";
-      }
+      const idToken = await auth.currentUser.getIdToken();
+      const endpoint = provider === "openai"
+        ? "https://contractor-crm-backend-production.up.railway.app/api/ai/openai"
+        : "https://contractor-crm-backend-production.up.railway.app/api/ai/claude";
+      const model = provider === "openai" ? (aiConfig?.openaiModel || "gpt-4o-mini") : (aiConfig?.model || "claude-sonnet-4-5");
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({ prompt: userContent, systemPrompt: scopeSystem, model })
+      });
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+      const text = d.text || d.content || "";
       onApply(text);
     } catch(e) { setError(e.message); }
     setLoading(false);
@@ -1387,7 +1349,7 @@ function AccountingExports({ data, t }) {
           const lineTotal = Number(line.qty)*Number(line.unitPrice);
           rows.push([
             inv.number, inv.date, inv.dueDate||"", inv.customerName, inv.jobTitle||"", inv.status,
-            line.description, line.type, line.qty, line.unit, line.unitPrice.toFixed(2), lineTotal.toFixed(2),
+            line.description, line.type, line.qty, line.unit, Number(line.unitPrice||0).toFixed(2), lineTotal.toFixed(2),
             i === 0 ? sub.toFixed(2) : "",
             i === 0 ? (inv.taxRate||0) : "",
             i === 0 ? tax.toFixed(2) : "",
