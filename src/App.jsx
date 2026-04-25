@@ -1090,8 +1090,8 @@ function CredentialsManager({ data, setData, t }) {
   const creds = data.credentials || { docs: [] };
 
   const DOC_TYPES = [
-    { key: "coi",     label: "Certificate of Insurance", icon: "🛡️", required: true },
-    { key: "license", label: "CCB Contractor License",   icon: "📋", required: true },
+    { key: "coi",     label: "Certificate of Insurance", icon: "🛡️", required: false },
+    { key: "license", label: "CCB Contractor License",   icon: "📋", required: false },
     { key: "bond",    label: "Surety Bond",               icon: "🔒", required: false },
     { key: "workers", label: "Workers Comp Certificate",  icon: "👷", required: false },
     { key: "other",   label: "Other Document",            icon: "📄", required: false },
