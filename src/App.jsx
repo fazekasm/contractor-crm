@@ -109,7 +109,16 @@ const defaultData = () => ({
 });
 
 const loadData = () => { try { return { ...defaultData(), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; } catch { return defaultData(); } };
-const saveData = d => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} };
+let _firestoreTimer = null;
+const saveData = (d, uid) => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {}
+  if (uid) {
+    clearTimeout(_firestoreTimer);
+    _firestoreTimer = setTimeout(() => {
+      saveToFirestore(uid, d).catch(e => console.error("Firestore save error:", e));
+    }, 1500);
+  }
+};
 
 // ─── THEME CONTEXT ────────────────────────────────────────────────────────────
 const getTheme = (themeData) => {
@@ -403,13 +412,29 @@ function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
         </div>
       </Card>
 
+      {/* Quick Actions */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {[
+          { label: "New Client",    icon: "users",    tab: "customers" },
+          { label: "New Job",       icon: "tag",      tab: "jobs" },
+          { label: "New Estimate",  icon: "file",     tab: "estimates" },
+          { label: "New Invoice",   icon: "contract", tab: "invoices" },
+        ].map(a => (
+          <button key={a.label} onClick={() => setTab(a.tab)}
+            style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 4px", textAlign: "center", cursor: "pointer", fontFamily: "inherit" }}>
+            <Icon d={IC[a.icon]} size={18} color={t.accent} />
+            <div style={{ color: t.text, fontSize: 11, fontWeight: 600, marginTop: 4 }}>+ {a.label.split(" ")[1]}</div>
+          </button>
+        ))}
+      </div>
+
       <Card t={t}>
         <SectionLabel t={t}>Recent Jobs — Tap to view</SectionLabel>
         {recentJobs.length === 0
           ? <div style={{ color: t.muted, textAlign: "center", padding: 20 }}>No jobs yet</div>
           : recentJobs.map(job => (
-            <button key={job.id} onClick={() => goJobs("all")}
-              style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${t.border}`, background: "none", border: "none", borderBottom: `1px solid ${t.border}`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            <button key={job.id} onClick={() => goJobs(job.status || "all")}
+              style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", background: "none", border: "none", borderBottom: `1px solid ${t.border}`, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
               <div>
                 <div style={{ color: t.text, fontSize: 14, fontWeight: 600 }}>{job.title}</div>
                 <div style={{ color: t.subtext, fontSize: 12 }}>{job.customerName}</div>
@@ -437,7 +462,17 @@ function Customers({ data, setData, t }) {
     else setData(d => ({ ...d, customers: [...d.customers, { ...form, id: uid(), createdAt: now, updatedAt: now }] }));
     setView("list");
   };
-  const del = id => { if (window.confirm("Delete customer?")) setData(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) })); };
+  const del = id => {
+    const linked = [
+      ...data.jobs.filter(j => j.customerId === id).map(j => `Job: ${j.title}`),
+      ...data.estimates.filter(e => e.customerId === id).map(e => `Estimate: ${e.number}`),
+      ...data.invoices.filter(i => i.customerId === id).map(i => `Invoice: ${i.number}`),
+    ];
+    const msg = linked.length > 0
+      ? `This client has ${linked.length} linked record${linked.length > 1 ? "s" : ""} (${linked.slice(0, 3).join(", ")}${linked.length > 3 ? "…" : ""}). Those records will keep the client name but lose the link. Delete anyway?`
+      : "Delete customer?";
+    if (window.confirm(msg)) setData(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
+  };
   const filtered = data.customers.filter(c => c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase()));
 
   if (view === "form") return (
@@ -959,7 +994,8 @@ function Estimates({ data, setData, t }) {
   const [form, setForm] = useState(null);
   const [selected, setSelected] = useState(null);
 
-  const blank = () => ({ id: uid(), number: `EST-${String(data.estimates.length + 1).padStart(4, "0")}`, customerId: "", customerName: "", jobTitle: "", date: today(), lines: [{ id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "labor" }], taxRate: 0, notes: "", status: "draft" });
+  const nextEstNum = () => { const nums = data.estimates.map(e => parseInt((e.number || "").replace("EST-","")) || 0); return Math.max(0, ...nums) + 1; };
+  const blank = () => ({ id: uid(), number: `EST-${String(nextEstNum()).padStart(4, "0")}`, customerId: "", customerName: "", jobTitle: "", date: today(), lines: [{ id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "labor" }], taxRate: 0, notes: "", status: "draft" });
   const open = e => { setSelected(e || null); setForm(e ? JSON.parse(JSON.stringify(e)) : blank()); setView("form"); };
   const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, { id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "material" }] }));
   const removeLine = id => setForm(f => ({ ...f, lines: f.lines.filter(l => l.id !== id) }));
@@ -976,7 +1012,8 @@ function Estimates({ data, setData, t }) {
     setView("list");
   };
   const convert = est => {
-    const inv = { id: uid(), number: `INV-${String(data.invoices.length + 1).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", openSignDocId: "", openSignSentTo: "", openSignSentAt: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: [] };
+    const nextInvNum = () => { const nums = data.invoices.map(i => parseInt((i.number || "").replace("INV-","")) || 0); return Math.max(0, ...nums) + 1; };
+    const inv = { id: uid(), number: `INV-${String(nextInvNum()).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", openSignDocId: "", openSignSentTo: "", openSignSentAt: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: [] };
     setData(d => ({ ...d, invoices: [...d.invoices, inv], estimates: d.estimates.map(e => e.id === est.id ? { ...e, status: "approved" } : e) }));
     alert(`Invoice ${inv.number} created!`);
   };
@@ -1225,7 +1262,7 @@ function CredentialsManager({ data, setData, t }) {
         const isExpanded = expandDoc === docType.key;
 
         return (
-          <div key={docType.key} style={{ background: t.surface, border: `1px solid ${uploaded ? (status?.color + "44" || t.border) : t.border}`, borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
+          <div key={docType.key} style={{ background: t.surface, border: `1px solid ${uploaded && status ? status.color + "44" : t.border}`, borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
             {/* Doc header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
               <span style={{ fontSize: 22, flexShrink: 0 }}>{docType.icon}</span>
@@ -1569,7 +1606,7 @@ function OpenSignSend({ inv, data, upd, t }) {
   // Pre-fill email from customer record
   useEffect(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
-  }, [cust]);
+  }, [cust, signerEmail]);
 
   const isConfigured = !!backendUrl;
   const isSent       = !!inv.openSignUrl;
@@ -1738,9 +1775,11 @@ function OpenSignSend({ inv, data, upd, t }) {
           body:    JSON.stringify({ documentId: docId }),
         });
       } else {
-        await fetch(`${proxyUrl.replace(/\/$/, "")}/opensign/resendrequestmail`, {
+        const pUrl = (openCfg.proxyUrl || "").replace(/\/$/, "");
+        const aKey = openCfg.apiKey || "";
+        await fetch(`${pUrl}/opensign/resendrequestmail`, {
           method:  "POST",
-          headers: { "Content-Type": "application/json", "x-api-token": apiKey },
+          headers: { "Content-Type": "application/json", "x-api-token": aKey },
           body:    JSON.stringify({ documentId: inv.openSignDocId }),
         });
       }
@@ -1972,27 +2011,47 @@ function Invoices({ data, setData, t, initialFilter }) {
     if (!w || w.closed) window.location.href = url;
   };
 
-  // Download PDF — opens in new tab on iOS (where <a download> is unreliable),
-  // direct file download on Android/desktop
-  const downloadPDF = inv => {
-    const cust = data.customers.find(c => c.id === inv.customerId);
-    const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
-    const blob = new Blob([html], { type: "text/html" });
-    const url  = URL.createObjectURL(blob);
+  // Helper to trigger a file download from a blob URL
+  const triggerDownload = (url, filename) => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     if (isIOS) {
-      // iOS Safari ignores the download attribute on blob URLs;
-      // open in-tab so user can tap Share → Save to Files
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } else {
-      const a    = document.createElement("a");
-      a.href     = url;
-      a.download = `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  };
+
+  // Download invoice HTML (line items, photos, terms) — always available
+  const downloadInvoiceHTML = inv => {
+    const cust = data.customers.find(c => c.id === inv.customerId);
+    const html = buildContractHTML(inv, cust, data.company, inv.contractTerms || {}, data.company.logo || "");
+    const blob = new Blob([html], { type: "text/html" });
+    triggerDownload(URL.createObjectURL(blob), `${inv.number}-${(inv.customerName || "invoice").replace(/\s+/g, "-")}.html`);
+  };
+
+  // Download custom contract PDF if uploaded
+  const downloadCustomContract = () => {
+    const a = document.createElement("a");
+    a.href = data.company.customContract;
+    a.download = data.company.customContractName || "contract.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Main download — if custom contract exists, downloads both; otherwise just HTML
+  const downloadPDF = inv => {
+    downloadInvoiceHTML(inv);
+    if (data.company.customContract) {
+      // Small delay so browser doesn't block the second download
+      setTimeout(() => downloadCustomContract(), 500);
     }
   };
 
@@ -2073,18 +2132,28 @@ function Invoices({ data, setData, t, initialFilter }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <Icon d={IC.upload} size={20} color={t.accent} />
             <div>
-              <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Download Invoice + Contract PDF</div>
-              <div style={{ color: t.subtext, fontSize: 11 }}>Save to phone — share via text, email, or AirDrop</div>
+              <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Download Invoice{data.company.customContract ? " + Custom Contract" : " + Contract"}</div>
+              <div style={{ color: t.subtext, fontSize: 11 }}>{data.company.customContract ? `Includes ${data.company.customContractName || "contract.pdf"}` : "Save to phone — share via text, email, or AirDrop"}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => downloadPDF(inv)} style={{ flex: 1, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 10, padding: "14px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Icon d={IC.upload} size={16} color="#fff" /> Download PDF
+              <Icon d={IC.upload} size={16} color="#fff" /> Download {data.company.customContract ? "Both Files" : "PDF"}
             </button>
             <button onClick={() => printPDF(inv)} style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "14px 18px", color: t.subtext, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               🖨️
             </button>
           </div>
+          {data.company.customContract && (
+            <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+              <button onClick={() => downloadInvoiceHTML(inv)} style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px", color: t.text, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                Invoice Only
+              </button>
+              <button onClick={downloadCustomContract} style={{ flex: 1, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px", color: t.text, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                Contract Only
+              </button>
+            </div>
+          )}
         </Card>
 
         {/* ── PROMINENT: Send via OpenSign ─────────────────────────── */}
@@ -2153,7 +2222,7 @@ function Invoices({ data, setData, t, initialFilter }) {
               {inv.photos.map(photo => (
                 <div key={photo.id} style={{ background: t.surface2, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                   <div style={{ position: "relative" }}>
-                    <img src={photo.dataUrl} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                    <img src={photo.dataUrl} alt={photo.caption || photo.label || "Job photo"} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
                     <button onClick={() => delPhoto(inv, photo.id)} style={{ position: "absolute", top: 4, right: 4, background: "#dc2626", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={IC.x} size={12} color="#fff" /></button>
                     <select value={photo.label} onChange={e => updPhoto(inv, photo.id, { label: e.target.value })} style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontFamily: "inherit" }}>
                       <option>Before</option><option>After</option><option>During</option><option>Detail</option>
@@ -2489,7 +2558,7 @@ function Settings({ data, setData, t }) {
         <SectionLabel t={t}>Company Logo</SectionLabel>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14 }}>
           <div style={{ width: 80, height: 80, background: t.surface2, border: `2px dashed ${t.border}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-            {co.logo ? <img src={co.logo} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Icon d={IC.image} size={28} color={t.subtext} />}
+            {co.logo ? <img src={co.logo} alt="Company logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Icon d={IC.image} size={28} color={t.subtext} />}
           </div>
           <div>
             <div style={{ color: t.text, fontSize: 13, marginBottom: 8 }}>Upload your logo — appears in the app header and on all PDFs</div>
@@ -2738,7 +2807,7 @@ export default function App() {
       <div style={{ borderBottom: `1px solid ${t.border}`, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", backgroundColor: `${t.surface}ee` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {data.company.logo
-            ? <img src={data.company.logo} style={{ height: 36, maxWidth: 100, objectFit: "contain" }} />
+            ? <img src={data.company.logo} alt="Logo" style={{ height: 36, maxWidth: 100, objectFit: "contain" }} />
             : <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ color: "#fff", fontSize: 18, fontWeight: 800 }}>C</span></div>
           }
           <div>
