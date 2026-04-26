@@ -1607,6 +1607,8 @@ function AccountingExports({ data, t }) {
 
 
 // ─── OPENSIGN COMPONENTS ───────────────────────────────────────────────────────
+const OPENSIGN_BACKEND_URL = "https://contractor-crm-backend-production.up.railway.app";
+
 function OpenSignSend({ inv, data, upd, t }) {
   const [phase, setPhase]         = useState("idle"); // idle|sending|sent|error
   const [signerEmail, setSignerEmail] = useState("");
@@ -1616,7 +1618,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const aiCfg    = data.aiConfig   || {};
   const openCfg   = data.openSignConfig || {};
-  const backendUrl = (openCfg.backendUrl || "").replace(/\/$/, "");
+  const backendUrl = OPENSIGN_BACKEND_URL;
   const cust      = data.customers.find(c => c.id === inv.customerId);
 
   // Pre-fill email from customer record
@@ -1624,7 +1626,7 @@ function OpenSignSend({ inv, data, upd, t }) {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
   }, [cust, signerEmail]);
 
-  const isConfigured = !!backendUrl;
+  const isConfigured = true;
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
 
@@ -1808,27 +1810,6 @@ function OpenSignSend({ inv, data, upd, t }) {
   };
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  // Not yet configured
-  if (!isConfigured) return (
-    <div style={{ background: `${t.accent}08`, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14 }}>
-      <div style={{ color: t.accent, fontSize: 13, fontWeight: 700, marginBottom: 6 }}>✍️ E-Signature via OpenSign™</div>
-      <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.7, marginBottom: 10 }}>
-        To enable one-tap signature sending, sign in and check
-        <strong style={{ color: t.accent }}> Settings → OpenSign™</strong>.
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {isSent
-          ? <div style={{ color: "#16a34a", fontSize: 12 }}>🔗 Manual link saved — customer can still sign</div>
-          : <div style={{ color: t.subtext, fontSize: 12 }}>Manual: paste a signing link below</div>
-        }
-      </div>
-      {/* Manual link fallback always available */}
-      <input value={inv.openSignUrl || ""} onChange={e => upd(inv.id, { openSignUrl: e.target.value })}
-        placeholder="Or paste an OpenSign link manually..."
-        style={{ width: "100%", marginTop: 8, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-    </div>
-  );
-
   // Already signed
   if (isSigned) return (
     <div style={{ background: data.lightMode ? "#dcfce7" : "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
@@ -1926,7 +1907,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function OpenSignSettings({ data, setData, t }) {
-  const BACKEND_URL = "https://contractor-crm-backend-production.up.railway.app";
+  const BACKEND_URL = OPENSIGN_BACKEND_URL;
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
