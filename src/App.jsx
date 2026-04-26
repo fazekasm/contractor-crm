@@ -139,8 +139,7 @@ const defaultData = () => ({
   customers: [], jobs: [], estimates: [], invoices: [],
   credentials: { docs: [] },
   qboConfig: { clientId: "", realmId: "", accessToken: "" },
-  openSignConfig: { apiKey: "", proxyUrl: "", backendUrl: "https://contractor-crm-backend-production.up.railway.app" },
-  aiConfig: { provider: "claude", apiKey: "", model: "claude-sonnet-4-5", openaiKey: "", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
+  aiConfig: { provider: "claude", model: "claude-sonnet-4-5", openaiModel: "gpt-4o-mini", region: "", markup: "20", customInstructions: "", laborRates: { general:"45", carpenter:"65", electrician:"85", plumber:"85", tile:"55", painter:"45", concrete:"55", hvac:"90", drywall:"50", roofing:"60" } },
 });
 
 // Deep-safe merge: prevents Firestore null values from overriding default sub-objects
@@ -431,7 +430,7 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
+function Dashboard({ data, t, setTab }) {
   const paid = data.invoices.filter(i => i.status === "paid").reduce((s, i) => s + (i.total || 0), 0);
   const outstanding = data.invoices.filter(i => i.status !== "paid").reduce((s, i) => s + (i.total || 0), 0);
   const activeJobs = data.jobs.filter(j => j.status === "active").length;
@@ -1133,8 +1132,7 @@ function Estimates({ data, setData, t }) {
   );
 }
 
-// ─── CREDENTIALS MANAGER (paste before Settings function) ─────────────────────
-
+// ─── CREDENTIALS MANAGER ──────────────────────────────────────────────────────
 function CredentialsManager({ data, setData, t }) {
   const [uploading, setUploading] = useState(null);
   const [expandDoc, setExpandDoc] = useState(null);
@@ -1366,17 +1364,13 @@ function CredentialsManager({ data, setData, t }) {
 }
 
 
-// ─── ACCOUNTING EXPORTS (paste before Invoices function) ──────────────────────
-
+// ─── ACCOUNTING EXPORTS ───────────────────────────────────────────────────────
 function AccountingExports({ data, t }) {
   const [dateFrom, setDateFrom]     = useState("");
   const [dateTo, setDateTo]         = useState("");
   const [exporting, setExporting]   = useState(null);
-  const [qboConfig, setQboConfig]   = useState(data.qboConfig || { clientId: "", realmId: "", accessToken: "" });
   const [showQBO, setShowQBO]       = useState(false);
-  const [qboStatus, setQboStatus]   = useState(null);
-
-  const co = data.company || {};
+  const qboConfig = data.qboConfig || { clientId: "", realmId: "", accessToken: "" };
 
   const filteredInvoices = data.invoices.filter(inv => {
     if (dateFrom && inv.date < dateFrom) return false;
@@ -1604,9 +1598,7 @@ function AccountingExports({ data, t }) {
   );
 }
 
-
-
-// ─── OPENSIGN COMPONENTS ───────────────────────────────────────────────────────
+// ─── OPENSIGN COMPONENTS ──────────────────────────────────────────────────────
 const OPENSIGN_BACKEND_URL = "https://contractor-crm-backend-production.up.railway.app";
 
 function OpenSignSend({ inv, data, upd, t }) {
@@ -1616,9 +1608,6 @@ function OpenSignSend({ inv, data, upd, t }) {
   const [errorMsg, setErrorMsg]   = useState("");
   const [showForm, setShowForm]   = useState(false);
 
-  const aiCfg    = data.aiConfig   || {};
-  const openCfg   = data.openSignConfig || {};
-  const backendUrl = OPENSIGN_BACKEND_URL;
   const cust      = data.customers.find(c => c.id === inv.customerId);
 
   // Pre-fill email from customer record
@@ -1626,7 +1615,6 @@ function OpenSignSend({ inv, data, upd, t }) {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
   }, [cust, signerEmail]);
 
-  const isConfigured = true;
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
 
@@ -1640,7 +1628,6 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const sendForSignature = async () => {
     if (!signerEmail.trim()) { setErrorMsg("Enter the customer's email address."); return; }
-    if (!isConfigured)       { setErrorMsg("OpenSign backend not connected. Check Settings → OpenSign™."); return; }
 
     setPhase("sending"); setErrorMsg("");
 
@@ -1732,7 +1719,7 @@ function OpenSignSend({ inv, data, upd, t }) {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Not signed in — please refresh and sign in again.");
 
-      const res = await fetch(`${backendUrl}/api/opensign/send`, {
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send`, {
         method:  "POST",
         headers: {
           "Content-Type":  "application/json",
@@ -1781,26 +1768,16 @@ function OpenSignSend({ inv, data, upd, t }) {
   };
 
   const resendReminder = async () => {
-    if (!inv.openSignDocId || !isConfigured) return;
+    if (!inv.openSignDocId) return;
     setPhase("sending");
     try {
-      if (backendUrl) {
-        const token = await auth.currentUser?.getIdToken();
-        const docId = inv.openSignBackendDocId || inv.openSignDocId;
-        await fetch(`${backendUrl}/api/opensign/resend`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body:    JSON.stringify({ documentId: docId }),
-        });
-      } else {
-        const pUrl = (openCfg.proxyUrl || "").replace(/\/$/, "");
-        const aKey = openCfg.apiKey || "";
-        await fetch(`${pUrl}/opensign/resendrequestmail`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json", "x-api-token": aKey },
-          body:    JSON.stringify({ documentId: inv.openSignDocId }),
-        });
-      }
+      const token = await auth.currentUser?.getIdToken();
+      const docId = inv.openSignBackendDocId || inv.openSignDocId;
+      await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/resend`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body:    JSON.stringify({ documentId: docId }),
+      });
       setPhase("sent");
       alert("Reminder sent to " + inv.openSignSentTo);
     } catch {
@@ -1901,28 +1878,14 @@ function OpenSignSend({ inv, data, upd, t }) {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FILE 4: OpenSign Settings section for App.jsx
-// Paste inside the Settings component return, after the AI Estimator card
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function OpenSignSettings({ data, setData, t }) {
-  const BACKEND_URL = OPENSIGN_BACKEND_URL;
+function OpenSignSettings({ t }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
-
-  // Auto-set backend URL if not already configured
-  useEffect(() => {
-    const cfg = data.openSignConfig || {};
-    if (!cfg.backendUrl || cfg.backendUrl !== BACKEND_URL) {
-      setData(d => ({ ...d, openSignConfig: { ...d.openSignConfig, backendUrl: BACKEND_URL } }));
-    }
-  }, []);
 
   const testConnection = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/health`);
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/health`);
       if (res.ok) {
         setTestResult({ ok: true, msg: "✅ Connected — ready to send documents." });
       } else {
@@ -1968,9 +1931,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [localFilter, setLocalFilter] = useState(initialFilter || "all");
-  const photoRef = useRef();
 
   const upd = (id, patch) => setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === id ? { ...i, ...patch } : i) }));
   const markPaid = id => upd(id, { status: "paid", paidAt: today() });
@@ -2070,18 +2031,12 @@ function Invoices({ data, setData, t, initialFilter }) {
           reader.onload = ev => resolve(ev.target.result);
           reader.readAsDataURL(file);
         });
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          const path = `photos/${currentUser.uid}/${Date.now()}_${file.name}`;
-          const ref = storageRef(storage, path);
-          await uploadString(ref, dataUrl, 'data_url');
-          const url = await getDownloadURL(ref);
-          const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
-          setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? { ...i, photos: [...(i.photos || []), photo] } : i) }));
-        } else {
-          const photo = { id: uid(), dataUrl, caption: "", label: "Before" };
-          setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? { ...i, photos: [...(i.photos || []), photo] } : i) }));
-        }
+        const path = `photos/${auth.currentUser.uid}/${Date.now()}_${file.name}`;
+        const ref = storageRef(storage, path);
+        await uploadString(ref, dataUrl, 'data_url');
+        const url = await getDownloadURL(ref);
+        const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
+        setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? { ...i, photos: [...(i.photos || []), photo] } : i) }));
       } catch (err) {
         console.error("Photo upload error:", err);
         alert(`Failed to upload "${file.name}": ${err.message}`);
@@ -2788,7 +2743,7 @@ function Settings({ data, setData, t }) {
       {/* OpenSign — Full Integration */}
       <Card t={t} style={{ marginBottom: 16 }}>
         <SectionLabel t={t}>✍️ OpenSign™ E-Signature</SectionLabel>
-        <OpenSignSettings data={data} setData={setData} t={t} />
+        <OpenSignSettings t={t} />
       </Card>
 
       {/* Backup */}
@@ -2945,7 +2900,7 @@ function AppInner() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px 100px" }}>
-        {tab === "dashboard" && <Dashboard data={data} t={t} setTab={goTo} setInvoiceFilter={f => setInvoiceFilter(f)} setJobFilter={f => setJobFilter(f)} />}
+        {tab === "dashboard" && <Dashboard data={data} t={t} setTab={goTo} />}
         {tab === "customers" && <Customers data={data} setData={setData} t={t} />}
         {tab === "jobs"      && <Jobs data={data} setData={setData} t={t} initialFilter={jobFilter} />}
         {tab === "estimates" && <Estimates data={data} setData={setData} t={t} />}
