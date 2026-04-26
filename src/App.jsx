@@ -2596,7 +2596,6 @@ function Settings({ data, setData, t }) {
           <Inp t={t} label="ZIP" value={co.zip || ""} onChange={v => setCo(c => ({ ...c, zip: v }))} />
         </div>
         <Inp t={t} label="Venmo Handle" value={co.venmoHandle || ""} onChange={v => setCo(c => ({ ...c, venmoHandle: v }))} placeholder="@YourVenmo" />
-        <Inp t={t} label="Your App URL (Netlify)" value={co.netlifyUrl || ""} onChange={v => setCo(c => ({ ...c, netlifyUrl: v }))} placeholder="https://your-crm.netlify.app" />
       </Card>
 
       {/* Payment Methods */}
