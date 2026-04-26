@@ -112,10 +112,12 @@ npm run preview # Preview production build locally
 
 ## Open Tasks
 
-### CRM-003: Enable Firebase App Check (High Priority)
-- Needs a reCAPTCHA v3 site key from https://console.cloud.google.com/security/recaptcha
-- Once obtained, uncomment the `appCheck` initialization in `src/firebase.js` and replace `'RECAPTCHA_SITE_KEY_HERE'`
-- This adds bot/abuse protection to all Firebase API calls
+### ~~CRM-003: Enable Firebase App Check~~ ✅ COMPLETED (2026-04-25)
+- reCAPTCHA Enterprise key created: `6LcnvcosAAAAAGZsNIXoilkKEMQ7pxTTXtfPFxOA`
+- Firebase App Check registered with reCAPTCHA Enterprise provider
+- `src/firebase.js` updated with `ReCaptchaEnterpriseProvider` and key
+- `netlify.toml` CSP headers updated to allow `recaptchaenterprise.googleapis.com` and `recaptcha.google.com` frame-src
+- Bot/abuse protection now active on all Firebase API calls
 
 ### CRM-001: Migrate Credential Docs to Firebase Storage
 - Currently, custom contract PDFs are stored as base64-encoded strings inside the Firestore user document
