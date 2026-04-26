@@ -423,7 +423,7 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   </div>
   ${inv.openSignUrl ? `<div class="sign-box no-print"><div style="font-size:18px;font-weight:700;color:#6d28d9">✍️ Sign This Contract Online</div><div style="color:#6b7280;margin-top:6px;font-size:13px">Click below to sign electronically via OpenSign™</div><a href="${inv.openSignUrl}" target="_blank" class="sign-btn">Sign Contract Now</a></div>` : ""}
   ${inv.status !== "paid" && venmoHandle ? `<div class="venmo-box no-print"><div style="font-size:18px;font-weight:700;color:#1d4ed8">💙 Pay via Venmo</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Send to <strong>${esc(venmoHandle)}</strong></div><a href="https://venmo.com/${venmoHandle.replace("@", "")}?txn=pay&note=${encodeURIComponent("Invoice " + inv.number)}&amount=${total.toFixed(2)}" target="_blank" class="venmo-btn">Pay ${fmt$(total)} via Venmo</a></div>` : ""}
-  ${inv.status !== "paid" && paymentLinks.length ? paymentLinks.map(pl => `<div class="venmo-box no-print" style="border-color:#6366f1;background:#f5f3ff;margin-top:16px"><div style="font-size:18px;font-weight:700;color:#4f46e5">💳 Pay via ${esc(pl.provider || "Card")}</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Secure online payment</div><a href="${esc(pl.url)}" target="_blank" class="venmo-btn" style="background:#6366f1">Pay ${fmt$(total)} via ${esc(pl.provider || "Card")}</a></div>`).join("") : ""}
+  ${inv.status !== "paid" && paymentLinks.length ? paymentLinks.map(pl => { const plName = pl.provider === "Other" ? (pl.customLabel || pl.provider || "Card") : (pl.provider || "Card"); return `<div class="venmo-box no-print" style="border-color:#6366f1;background:#f5f3ff;margin-top:16px"><div style="font-size:18px;font-weight:700;color:#4f46e5">💳 Pay via ${esc(plName)}</div><div style="color:#6b7280;margin-top:4px;font-size:13px">Secure online payment</div><a href="${esc(pl.url)}" target="_blank" class="venmo-btn" style="background:#6366f1">Pay ${fmt$(total)} via ${esc(plName)}</a></div>`; }).join("") : ""}
   <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">${esc(co.name || "Your Company")} · CCB # ${esc(co.ccbNumber || "__________")} · ${fmtDate(today())}
   ${co.netlifyUrl ? `<div style="margin-top:8px"><a href="${esc(co.netlifyUrl)}/credentials" target="_blank" style="color:#1d4ed8;font-size:11px;font-weight:600">🛡️ View License &amp; Insurance Credentials</a></div>` : ""}
   </div>
@@ -2234,11 +2234,14 @@ function Invoices({ data, setData, t, initialFilter }) {
                       💙 Venmo — {fmt$(total)}
                     </button>
                   )}
-                  {((data.company || {}).paymentLinks || []).map((pl, idx) => (
-                    <button key={idx} onClick={() => { const w = window.open(pl.url, "_blank"); if (!w || w.closed) window.location.href = pl.url; }} style={{ flex: 1, background: "linear-gradient(135deg,#6366f1,#4f46e5)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                      💳 {pl.provider || "Pay"}
-                    </button>
-                  ))}
+                  {((data.company || {}).paymentLinks || []).map((pl, idx) => {
+                    const label = pl.provider === "Other" ? (pl.customLabel || "Other") : (pl.provider || "Pay");
+                    return (
+                      <button key={idx} onClick={() => { const w = window.open(pl.url, "_blank"); if (!w || w.closed) window.location.href = pl.url; }} style={{ flex: 1, background: "linear-gradient(135deg,#6366f1,#4f46e5)", border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                        💳 {label}
+                      </button>
+                    );
+                  })}
                   <button onClick={() => markPaid(inv.id)} style={{ background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "11px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                     ✅ Paid
                   </button>
@@ -2608,15 +2611,26 @@ function Settings({ data, setData, t }) {
                 <option value="Stripe">Stripe</option>
                 <option value="Square">Square</option>
                 <option value="PayPal">PayPal</option>
+                <option value="Wave">Wave</option>
                 <option value="Whop">Whop</option>
+                <option value="Cash App">Cash App</option>
                 <option value="Other">Other</option>
               </select>
               <button onClick={() => { const links = (co.paymentLinks || []).filter((_, i) => i !== idx); setCo(c => ({ ...c, paymentLinks: links })); }} style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", color: t.subtext, cursor: "pointer", fontSize: 12 }}>✕</button>
             </div>
             <Inp t={t} label="Payment Link URL" value={pl.url || ""} onChange={v => { const links = [...(co.paymentLinks || [])]; links[idx] = { ...links[idx], url: v }; setCo(c => ({ ...c, paymentLinks: links })); }} placeholder="https://checkout.stripe.com/pay/..." />
+            {pl.provider === 'Other' && (
+              <input
+                type="text"
+                placeholder="Provider name (e.g. Zelle, QuickBooks)"
+                value={pl.customLabel || ''}
+                onChange={e => { const links = [...(co.paymentLinks || [])]; links[idx] = { ...links[idx], customLabel: e.target.value }; setCo(c => ({ ...c, paymentLinks: links })); }}
+                style={{marginTop:6,width:'100%',padding:'6px 10px',borderRadius:6,border:`1px solid ${t.border}`,background:t.surface2,color:t.text,fontSize:13}}
+              />
+            )}
           </div>
         ))}
-        <button onClick={() => setCo(c => ({ ...c, paymentLinks: [...(c.paymentLinks || []), { provider: "", url: "" }] }))} style={{ width: "100%", background: t.surface2, border: `1px dashed ${t.border}`, borderRadius: 8, padding: "10px", color: t.subtext, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+        <button onClick={() => setCo(c => ({ ...c, paymentLinks: [...(c.paymentLinks || []), { provider: "", url: "", customLabel: "" }] }))} style={{ width: "100%", background: t.surface2, border: `1px dashed ${t.border}`, borderRadius: 8, padding: "10px", color: t.subtext, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           + Add Payment Method
         </button>
         <div style={{ background: t.surface2, borderRadius: 8, padding: 12, marginTop: 12, border: `1px solid ${t.border}` }}>
@@ -2625,7 +2639,9 @@ function Settings({ data, setData, t }) {
             <strong style={{ color: t.text }}>Stripe:</strong> dashboard.stripe.com → Payment Links → Create<br/>
             <strong style={{ color: t.text }}>Square:</strong> squareup.com → Online Checkout → Create Link<br/>
             <strong style={{ color: t.text }}>PayPal:</strong> paypal.me → Create your PayPal.Me link<br/>
-            <strong style={{ color: t.text }}>Whop:</strong> whop.com → Create product → Copy checkout URL
+            <strong style={{ color: t.text }}>Wave:</strong> Go to wave.com → Payments → Get paid online → copy your payment link<br/>
+            <strong style={{ color: t.text }}>Whop:</strong> whop.com → Create product → Copy checkout URL<br/>
+            <strong style={{ color: t.text }}>Cash App:</strong> Your link is cash.app/$YourCashtag
           </div>
         </div>
       </Card>
