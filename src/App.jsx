@@ -1986,6 +1986,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [localFilter, setLocalFilter] = useState(initialFilter || "all");
   const photoRef = useRef();
 
   const upd = (id, patch) => setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === id ? { ...i, ...patch } : i) }));
@@ -2106,9 +2107,17 @@ function Invoices({ data, setData, t, initialFilter }) {
     upd(inv.id, { photos: (inv.photos || []).filter(p => p.id !== photoId) });
   };
 
+  // Reset to list if selected invoice no longer exists (e.g., deleted)
+  useEffect(() => {
+    if (view === "detail" && selected && !data.invoices.find(i => i.id === selected.id)) {
+      setView("list");
+      setSelected(null);
+    }
+  }, [view, selected, data.invoices]);
+
   if (view === "detail" && selected) {
     const inv = data.invoices.find(i => i.id === selected.id);
-    if (!inv) { setView("list"); return null; }
+    if (!inv) return null;
     const co = data.company || {};
     const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
     const taxAmt = sub * (Number(inv.taxRate || 0) / 100);
@@ -2280,8 +2289,6 @@ function Invoices({ data, setData, t, initialFilter }) {
   }
 
   // Apply filter from dashboard navigation or local filter buttons
-  const [localFilter, setLocalFilter] = useState(initialFilter || "all");
-
   const filterInvoices = (invList, f) => {
     if (f === "unpaid")   return invList.filter(i => i.status !== "paid");
     if (f === "paid")     return invList.filter(i => i.status === "paid");
