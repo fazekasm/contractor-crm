@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -15,17 +15,27 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-const appCheck = initializeAppCheck(app, {
-  provider: new ReCaptchaEnterpriseProvider('6LcnvcosAAAAAGZsNIXoilkKEMQ7pxTTXtfPFxOA'),
-  isTokenAutoRefreshEnabled: true,
-});
+try {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaEnterpriseProvider('6LcnvcosAAAAAGZsNIXoilkKEMQ7pxTTXtfPFxOA'),
+    isTokenAutoRefreshEnabled: true,
+  });
+} catch (e) {
+  console.warn('App Check init failed, continuing without it:', e);
+}
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export { ref as storageRef, uploadString, getDownloadURL, deleteObject };
 const provider = new GoogleAuthProvider();
 
-export const signInWithGoogle = () => signInWithPopup(auth, provider);
+export const signInWithGoogle = () =>
+  signInWithPopup(auth, provider).catch((err) => {
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      return signInWithRedirect(auth, provider);
+    }
+    throw err;
+  });
 export const signOutUser = () => signOut(auth);
 export const onAuthChange = (cb) => onAuthStateChanged(auth, cb);
 
