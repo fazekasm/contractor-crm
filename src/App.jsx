@@ -2080,24 +2080,30 @@ function Invoices({ data, setData, t, initialFilter }) {
   const addPhoto = async (inv, e) => {
     const MAX_PHOTO_MB = 10;
     const files = Array.from(e.target.files);
+    e.target.value = "";
     for (const file of files) {
       if (file.size > MAX_PHOTO_MB * 1024 * 1024) { alert(`Photo "${file.name}" exceeds ${MAX_PHOTO_MB}MB limit. Please resize or compress it first.`); continue; }
-      const dataUrl = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = ev => resolve(ev.target.result);
-        reader.readAsDataURL(file);
-      });
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const path = `photos/${currentUser.uid}/${Date.now()}_${file.name}`;
-        const photoRef = storageRef(storage, path);
-        await uploadString(photoRef, dataUrl, 'data_url');
-        const url = await getDownloadURL(photoRef);
-        const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
-        upd(inv.id, { photos: [...(inv.photos || []), photo] });
-      } else {
-        const photo = { id: uid(), dataUrl, caption: "", label: "Before" };
-        upd(inv.id, { photos: [...(inv.photos || []), photo] });
+      try {
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = ev => resolve(ev.target.result);
+          reader.readAsDataURL(file);
+        });
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const path = `photos/${currentUser.uid}/${Date.now()}_${file.name}`;
+          const ref = storageRef(storage, path);
+          await uploadString(ref, dataUrl, 'data_url');
+          const url = await getDownloadURL(ref);
+          const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
+          setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? { ...i, photos: [...(i.photos || []), photo] } : i) }));
+        } else {
+          const photo = { id: uid(), dataUrl, caption: "", label: "Before" };
+          setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? { ...i, photos: [...(i.photos || []), photo] } : i) }));
+        }
+      } catch (err) {
+        console.error("Photo upload error:", err);
+        alert(`Failed to upload "${file.name}": ${err.message}`);
       }
     }
   };
