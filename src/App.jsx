@@ -1602,18 +1602,19 @@ function AccountingExports({ data, t }) {
 const OPENSIGN_BACKEND_URL = "https://contractor-crm-backend-production.up.railway.app";
 
 function OpenSignSend({ inv, data, upd, t }) {
+  const cust      = data.customers.find(c => c.id === inv.customerId);
+
   const [phase, setPhase]         = useState("idle"); // idle|sending|sent|error
-  const [signerEmail, setSignerEmail] = useState("");
-  const [signerName, setSignerName]   = useState(inv.customerName || "");
+  const [signerEmail, setSignerEmail] = useState(cust?.email || "");
+  const [signerName, setSignerName]   = useState(cust?.name || inv.customerName || "");
   const [errorMsg, setErrorMsg]   = useState("");
   const [showForm, setShowForm]   = useState(false);
 
-  const cust      = data.customers.find(c => c.id === inv.customerId);
-
-  // Pre-fill email from customer record
+  // If the customer record loads/changes after mount, fill any still-empty fields
   useEffect(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
-  }, [cust, signerEmail]);
+    if (cust?.name  && !signerName)  setSignerName(cust.name);
+  }, [cust]);
 
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
