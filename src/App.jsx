@@ -1632,6 +1632,10 @@ function OpenSignSend({ inv, data, upd, t }) {
 
     setPhase("sending"); setErrorMsg("");
 
+    // 30s timeout — a hung fetch was leaving the UI on "sending" forever.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 30_000);
+
     try {
       // Build the invoice+contract HTML
       const co   = data.company || {};
@@ -1739,6 +1743,7 @@ function OpenSignSend({ inv, data, upd, t }) {
           }],
           expiresInDays: 30,
         }),
+        signal: ac.signal,
       });
 
       const json = await res.json();
@@ -1763,27 +1768,47 @@ function OpenSignSend({ inv, data, upd, t }) {
       setShowForm(false);
 
     } catch (err) {
-      setErrorMsg(err.message || "Failed to send. Please try again.");
+      const msg = err?.name === "AbortError"
+        ? "Request timed out after 30 seconds. Please try again."
+        : (err?.message || "Failed to send. Please try again.");
+      setErrorMsg(msg);
       setPhase("error");
+    } finally {
+      clearTimeout(timer);
+      // Safety net so the UI never gets stuck on "sending" if neither branch fired.
+      setPhase(p => p === "sending" ? "error" : p);
     }
   };
 
   const resendReminder = async () => {
     if (!inv.openSignDocId) return;
     setPhase("sending");
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 30_000);
     try {
       const token = await auth.currentUser?.getIdToken();
       const docId = inv.openSignBackendDocId || inv.openSignDocId;
-      await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/resend`, {
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/resend`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body:    JSON.stringify({ documentId: docId }),
+        signal:  ac.signal,
       });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+      }
       setPhase("sent");
       alert("Reminder sent to " + inv.openSignSentTo);
-    } catch {
+    } catch (err) {
       setPhase("idle");
-      alert("Failed to resend reminder. Try again.");
+      const msg = err?.name === "AbortError"
+        ? "Reminder request timed out. Try again."
+        : `Failed to resend reminder: ${err?.message || "Try again."}`;
+      alert(msg);
+    } finally {
+      clearTimeout(timer);
+      setPhase(p => p === "sending" ? "idle" : p);
     }
   };
   // ── Render ──────────────────────────────────────────────────────────────────
