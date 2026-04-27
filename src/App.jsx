@@ -1720,26 +1720,39 @@ function OpenSignSend({ inv, data, upd, t }) {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Not signed in — please refresh and sign in again.");
 
-      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send`, {
-        method:  "POST",
-        headers: {
-          "Content-Type":  "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          documentType: "invoice",
-          title:        docTitle,
-          note:         payload.note,
-          pdfBase64:    base64File,
-          signers: [{
-            name:  signerName || inv.customerName,
-            email: signerEmail.trim(),
-            phone: cust?.phone || "",
-            role:  "customer",
-          }],
-          expiresInDays: 30,
-        }),
-      });
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 30000);
+      let res;
+      try {
+        res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            documentType: "invoice",
+            title:        docTitle,
+            note:         payload.note,
+            pdfBase64:    base64File,
+            signers: [{
+              name:  signerName || inv.customerName,
+              email: signerEmail.trim(),
+              phone: cust?.phone || "",
+              role:  "customer",
+            }],
+            expiresInDays: 30,
+          }),
+          signal: ctl.signal,
+        });
+      } catch (e) {
+        if (e.name === "AbortError") {
+          throw new Error("Request timed out after 30 seconds. Please try again.");
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
 
       const json = await res.json();
       if (!res.ok || json.error) {
@@ -1771,19 +1784,31 @@ function OpenSignSend({ inv, data, upd, t }) {
   const resendReminder = async () => {
     if (!inv.openSignDocId) return;
     setPhase("sending");
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 30000);
     try {
       const token = await auth.currentUser?.getIdToken();
       const docId = inv.openSignBackendDocId || inv.openSignDocId;
-      await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/resend`, {
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/resend`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body:    JSON.stringify({ documentId: docId }),
+        signal:  ctl.signal,
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) {
+        throw new Error(json.error || `Backend error: ${res.status}`);
+      }
       setPhase("sent");
       alert("Reminder sent to " + inv.openSignSentTo);
-    } catch {
+    } catch (err) {
       setPhase("idle");
-      alert("Failed to resend reminder. Try again.");
+      const msg = err.name === "AbortError"
+        ? "Reminder timed out after 30 seconds. Please try again."
+        : (err.message || "Failed to resend reminder. Try again.");
+      alert(msg);
+    } finally {
+      clearTimeout(timer);
     }
   };
   // ── Render ──────────────────────────────────────────────────────────────────
