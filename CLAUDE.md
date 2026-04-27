@@ -112,12 +112,12 @@ npm run preview # Preview production build locally
 
 ## Open Tasks
 
-### ~~CRM-003: Enable Firebase App Check~~ ✅ COMPLETED (2026-04-25)
-- reCAPTCHA Enterprise key created: `6LcnvcosAAAAAGZsNIXoilkKEMQ7pxTTXtfPFxOA`
-- Firebase App Check registered with reCAPTCHA Enterprise provider
-- `src/firebase.js` updated with `ReCaptchaEnterpriseProvider` and key
-- `netlify.toml` CSP headers updated to allow `recaptchaenterprise.googleapis.com` and `recaptcha.google.com` frame-src
-- Bot/abuse protection now active on all Firebase API calls
+### CRM-003: Enable Firebase App Check — ⚠️ DISABLED (2026-04-26)
+- App Check init in `src/firebase.js` is commented out — was breaking Google Sign-In on production (`contractor-crm.netlify.app`). `signInWithPopup` rejected silently because the auth handler had no `.catch`; root cause was App Check token fetch failing.
+- reCAPTCHA Enterprise key still exists: `6LcnvcosAAAAAGZsNIXoilkKEMQ7pxTTXtfPFxOA`
+- `netlify.toml` CSP headers still allow `recaptchaenterprise.googleapis.com` / `recaptcha.google.com` (left in place; no harm)
+- **To re-enable:** add `contractor-crm.netlify.app` to the reCAPTCHA Enterprise key's allowed domains in Google Cloud Console, verify Firebase Console → App Check enforcement state for Identity Toolkit, then uncomment the import and `initializeAppCheck` block in `src/firebase.js`. Test sign-in on the deployed site before considering it shipped.
+- `signInWithGoogle` now has a `.catch` that logs and re-throws, so future auth failures surface in the console instead of silently doing nothing.
 
 ### CRM-001: Migrate Credential Docs to Firebase Storage
 - Currently, custom contract PDFs are stored as base64-encoded strings inside the Firestore user document
