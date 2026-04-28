@@ -1609,6 +1609,8 @@ function OpenSignSend({ inv, data, upd, t }) {
   const [signerName, setSignerName]   = useState(cust?.name || inv.customerName || "");
   const [errorMsg, setErrorMsg]   = useState("");
   const [showForm, setShowForm]   = useState(false);
+  const [contractPreviewHtml, setContractPreviewHtml] = useState(null);
+  const [pendingSendInvoice, setPendingSendInvoice]   = useState(null);
 
   // If the customer record loads/changes after mount, fill any still-empty fields
   useEffect(() => {
@@ -1629,6 +1631,17 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const sendForSignature = async () => {
     if (!signerEmail.trim()) { setErrorMsg("Enter the customer's email address."); return; }
+    setErrorMsg("");
+
+    const co = data.company || {};
+    const contractHtml = buildContractHTML(inv, cust, co, inv.contractTerms || {}, co.logo || "");
+    setContractPreviewHtml(contractHtml);
+    setPendingSendInvoice(inv);
+  };
+
+  const confirmAndSend = async () => {
+    const invoice = pendingSendInvoice || inv;
+    setContractPreviewHtml(null);
 
     setPhase("sending"); setErrorMsg("");
 
@@ -1639,15 +1652,15 @@ function OpenSignSend({ inv, data, upd, t }) {
     try {
       // Build the invoice+contract HTML
       const co   = data.company || {};
-      const html = buildContractHTML(inv, cust, co, inv.contractTerms || {}, co.logo || "");
+      const html = buildContractHTML(invoice, cust, co, invoice.contractTerms || {}, co.logo || "");
 
       // Convert to base64
       const base64File = htmlToBase64(html);
 
       // Calculate total for the document title
-      const sub   = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-      const total = sub + sub * (Number(inv.taxRate || 0) / 100);
-      const docTitle = `${inv.number} — ${inv.customerName} — $${total.toFixed(2)}`;
+      const sub   = (invoice.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
+      const total = sub + sub * (Number(invoice.taxRate || 0) / 100);
+      const docTitle = `${invoice.number} — ${invoice.customerName} — $${total.toFixed(2)}`;
 
       // OpenSign Create Document payload
       // Signature widget placed at bottom of last page (page 2 for typical contract)
@@ -1658,19 +1671,19 @@ function OpenSignSend({ inv, data, upd, t }) {
         note:     `Please review and sign the contract and invoice for ${docTitle}. Contact ${co.name || "your contractor"} with any questions.`,
         signers: [
           {
-            name:  signerName || inv.customerName,
+            name:  signerName || invoice.customerName,
             email: signerEmail.trim(),
             phone: cust?.phone || "",
           }
         ],
         signerdetails: [
           {
-            name:  signerName || inv.customerName,
+            name:  signerName || invoice.customerName,
             email: signerEmail.trim(),
             widgets: [
               {
                 type: "signature",
-                page: 1,
+                page: 2,
                 x:    310,
                 y:    680,
                 w:    180,
@@ -1679,7 +1692,7 @@ function OpenSignSend({ inv, data, upd, t }) {
               },
               {
                 type: "date",
-                page: 1,
+                page: 2,
                 x:    310,
                 y:    730,
                 w:    120,
@@ -1694,7 +1707,7 @@ function OpenSignSend({ inv, data, upd, t }) {
               },
               {
                 type: "name",
-                page: 1,
+                page: 2,
                 x:    310,
                 y:    760,
                 w:    180,
@@ -1736,7 +1749,7 @@ function OpenSignSend({ inv, data, upd, t }) {
           note:         payload.note,
           pdfBase64:    base64File,
           signers: [{
-            name:  signerName || inv.customerName,
+            name:  signerName || invoice.customerName,
             email: signerEmail.trim(),
             phone: cust?.phone || "",
             role:  "customer",
@@ -1756,7 +1769,7 @@ function OpenSignSend({ inv, data, upd, t }) {
       backendDocId  = json.documentId   || "";
 
       // Save to invoice
-      upd(inv.id, {
+      upd(invoice.id, {
         openSignUrl:         signingUrl,
         openSignDocId:       opensignDocId,
         openSignBackendDocId: backendDocId,
@@ -1777,6 +1790,7 @@ function OpenSignSend({ inv, data, upd, t }) {
       clearTimeout(timer);
       // Safety net so the UI never gets stuck on "sending" if neither branch fired.
       setPhase(p => p === "sending" ? "error" : p);
+      setPendingSendInvoice(null);
     }
   };
 
@@ -1863,6 +1877,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   // Send form
   return (
+    <>
     <div style={{ background: `${t.accent}10`, border: `2px solid ${t.accent}`, borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ color: t.accent, fontSize: 13, fontWeight: 700 }}>✍️ Send for Signature via OpenSign™</div>
@@ -1900,6 +1915,19 @@ function OpenSignSend({ inv, data, upd, t }) {
       </div>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
+    {contractPreviewHtml && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', background: t.bg }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: t.surface, borderBottom: `1px solid ${t.border}` }}>
+          <span style={{ color: t.text, fontWeight: 600 }}>Contract Preview</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setContractPreviewHtml(null); setPendingSendInvoice(null); }} style={{ padding: '8px 16px', borderRadius: 6, border: `1px solid ${t.border}`, background: t.surface2, color: t.text, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={confirmAndSend} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: t.accent, color: '#fff', cursor: 'pointer' }}>Confirm & Send</button>
+          </div>
+        </div>
+        <iframe srcDoc={contractPreviewHtml} style={{ flex: 1, border: 'none', width: '100%' }} />
+      </div>
+    )}
+    </>
   );
 }
 
