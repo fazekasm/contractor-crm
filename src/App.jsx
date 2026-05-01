@@ -133,7 +133,7 @@ const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").repl
 const STORAGE_KEY = "crm_v3";
 
 const defaultData = () => ({
-  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "", customContract: "", customContractName: "", paymentLinks: [] },
+  company: { name: "", phone: "", email: "", address: "", city: "", state: "OR", zip: "", ccbNumber: "", venmoHandle: "", logo: "", netlifyUrl: "", customContract: "", customContractName: "", signature: "", paymentLinks: [] },
   theme: { preset: "Bold Blue", custom: { ...THEMES["Bold Blue"] } },
   lightMode: false,
   customers: [], jobs: [], estimates: [], invoices: [],
@@ -409,6 +409,7 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   <div class="sig-grid">
     <div class="sig-box">
       <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Contractor Signature</div>
+      ${co.signature ? `<img src="${co.signature}" style="height:60px;max-width:200px;display:block;margin-bottom:4px;" />` : ""}
       <div class="sig-line"></div>
       <div style="font-size:13px;font-weight:600">${esc(co.name || "Contractor")}</div>
       <div style="color:#6b7280;font-size:11px;margin-top:6px">Date: ____________________</div>
@@ -2515,7 +2516,94 @@ function Settings({ data, setData, t }) {
   const [themeData, setThemeData] = useState({ ...data.theme });
   const [saved, setSaved] = useState(false);
   const [previewTheme, setPreviewTheme] = useState(null);
+  const [sigSaved, setSigSaved] = useState(false);
   const logoRef = useRef();
+  const sigCanvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    let drawing = false;
+    let lastX = 0, lastY = 0;
+
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      const cy = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: (cx - rect.left) * scaleX, y: (cy - rect.top) * scaleY };
+    };
+
+    const start = (e) => {
+      e.preventDefault();
+      drawing = true;
+      const { x, y } = getPos(e);
+      lastX = x; lastY = y;
+    };
+
+    const move = (e) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const { x, y } = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastX = x; lastY = y;
+    };
+
+    const end = () => { drawing = false; };
+
+    canvas.addEventListener("mousedown", start);
+    canvas.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", end);
+    canvas.addEventListener("touchstart", start, { passive: false });
+    canvas.addEventListener("touchmove", move, { passive: false });
+    canvas.addEventListener("touchend", end);
+
+    return () => {
+      canvas.removeEventListener("mousedown", start);
+      canvas.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", end);
+      canvas.removeEventListener("touchstart", start);
+      canvas.removeEventListener("touchmove", move);
+      canvas.removeEventListener("touchend", end);
+    };
+  }, []);
+
+  const clearSigCanvas = () => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleClearSig = () => {
+    clearSigCanvas();
+    setCo(c => ({ ...c, signature: "" }));
+    setData(d => ({ ...d, company: { ...(d.company || {}), signature: "" } }));
+    setSigSaved(false);
+  };
+
+  const handleSaveSig = () => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    setCo(c => ({ ...c, signature: dataUrl }));
+    setData(d => ({ ...d, company: { ...(d.company || {}), signature: dataUrl } }));
+    setSigSaved(true);
+    setTimeout(() => setSigSaved(false), 2000);
+  };
 
   const liveTheme = previewTheme || getTheme(themeData);
 
@@ -2589,6 +2677,34 @@ function Settings({ data, setData, t }) {
           <Inp t={t} label="ZIP" value={co.zip || ""} onChange={v => setCo(c => ({ ...c, zip: v }))} />
         </div>
         <Inp t={t} label="Venmo Handle" value={co.venmoHandle || ""} onChange={v => setCo(c => ({ ...c, venmoHandle: v }))} placeholder="@YourVenmo" />
+      </Card>
+
+      {/* Contractor Signature */}
+      <Card t={t} style={{ marginBottom: 16 }}>
+        <SectionLabel t={t}>✍️ Contractor Signature</SectionLabel>
+        <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12 }}>Draw your signature below. It will be embedded above the contractor signature line on every generated contract.</div>
+        <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: 8, marginBottom: 10, display: "flex", justifyContent: "center" }}>
+          <canvas
+            ref={sigCanvasRef}
+            width={400}
+            height={150}
+            style={{ background: "#fff", borderRadius: 6, maxWidth: "100%", touchAction: "none", cursor: "crosshair", display: "block" }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <Btn t={t} size="sm" variant="ghost" onClick={handleClearSig}>
+            <Icon d={IC.x} size={12} /> Clear
+          </Btn>
+          <Btn t={t} size="sm" variant={sigSaved ? "success" : "primary"} onClick={handleSaveSig}>
+            {sigSaved ? <><Icon d={IC.check} size={12} /> Saved!</> : <><Icon d={IC.check} size={12} /> Save Signature</>}
+          </Btn>
+        </div>
+        {co.signature && (
+          <div style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: 12 }}>
+            <div style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>Saved Signature</div>
+            <img src={co.signature} alt="Saved signature" style={{ background: "#fff", height: 60, maxWidth: 220, borderRadius: 6, padding: 4, border: `1px solid ${t.border}` }} />
+          </div>
+        )}
       </Card>
 
       {/* Payment Methods */}
