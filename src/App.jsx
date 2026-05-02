@@ -1729,12 +1729,28 @@ function OpenSignSend({ inv, data, upd, t }) {
   const [showForm, setShowForm]   = useState(false);
   const [contractPreviewHtml, setContractPreviewHtml] = useState(null);
   const [pendingSendInvoice, setPendingSendInvoice]   = useState(null);
+  const [signingIframeUrl, setSigningIframeUrl]       = useState(null);
 
   // If the customer record loads/changes after mount, fill any still-empty fields
   useEffect(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
     if (cust?.name  && !signerName)  setSignerName(cust.name);
   }, [cust]);
+
+  // Listen for completion messages posted by the OpenSign iframe.
+  useEffect(() => {
+    function handleMessage(e) {
+      const d = e.data;
+      if (!d) return;
+      const completed = d.type === 'SIGNING_COMPLETE'
+        || d.type === 'opensign:complete'
+        || d.signed === true
+        || d.status === 'completed';
+      if (completed) setSigningIframeUrl(null);
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
@@ -1936,8 +1952,9 @@ function OpenSignSend({ inv, data, upd, t }) {
         openSignSentAt:      today(),
       });
 
-      // Open contractor's signing link in a new tab so they sign first.
-      if (contractorSigningUrl) window.open(contractorSigningUrl, "_blank");
+      // Show contractor's signing page in an in-app iframe modal so they sign first
+      // without leaving the app or being blocked by popup blockers.
+      if (contractorSigningUrl) setSigningIframeUrl(contractorSigningUrl);
 
       setPhase("sent");
       setShowForm(false);
@@ -2095,6 +2112,32 @@ function OpenSignSend({ inv, data, upd, t }) {
           </div>
         </div>
         <iframe srcDoc={contractPreviewHtml} style={{ flex: 1, border: 'none', width: '100%' }} />
+      </div>
+    )}
+    {signingIframeUrl && (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: t.bg, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+          <div style={{ fontWeight: 600, color: t.text }}>Sign Contract</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => window.open(signingIframeUrl, '_blank')}
+              style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
+            >Open in tab</button>
+            <button
+              onClick={() => setSigningIframeUrl(null)}
+              style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
+            >✕ Close</button>
+          </div>
+        </div>
+        <iframe
+          src={signingIframeUrl}
+          style={{ flex: 1, border: 'none', width: '100%' }}
+          title="Sign Contract"
+          allow="camera; microphone"
+        />
+        <div style={{ padding: '8px 16px', background: t.surface, borderTop: `1px solid ${t.border}`, color: t.subtext, fontSize: 12, textAlign: 'center', flexShrink: 0 }}>
+          After signing, close this window and the invoice will update automatically.
+        </div>
       </div>
     )}
     </>
