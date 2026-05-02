@@ -2204,8 +2204,6 @@ function ChangeOrders({ inv, data, setData, t }) {
 function ChangeOrderModal({ inv, data, t, existing, updCO, setData, onClose }) {
   const co        = data.company || {};
   const cust      = data.customers.find(c => c.id === inv.customerId);
-  const openCfg   = data.openSignConfig || {};
-  const backendUrl = (openCfg.backendUrl || "").replace(/\/$/, "");
 
   const nextCONum = () => {
     const list = inv.changeOrders || [];
@@ -2322,7 +2320,6 @@ function ChangeOrderModal({ inv, data, t, existing, updCO, setData, onClose }) {
   const sendForSignature = async () => {
     setErrorMsg("");
     if (!signerEmail.trim())    { setErrorMsg("Enter the customer's email address."); return; }
-    if (!backendUrl)            { setErrorMsg("OpenSign backend not connected. Check Settings → OpenSign™."); return; }
     if (mode === "upload" && !form.customPdfBase64 && !form.customPdfUrl) {
       setErrorMsg("Upload a PDF first.");
       return;
@@ -2359,7 +2356,7 @@ function ChangeOrderModal({ inv, data, t, existing, updCO, setData, onClose }) {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Not signed in — please refresh and sign in again.");
 
-      const res = await fetch(`${backendUrl}/api/opensign/send`, {
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send`, {
         method:  "POST",
         headers: {
           "Content-Type":  "application/json",
