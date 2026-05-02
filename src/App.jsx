@@ -1833,11 +1833,19 @@ function OpenSignSend({ inv, data, upd, t }) {
     <div style={{ background: data.lightMode ? "#dcfce7" : "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 20 }}>✅</span>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ color: data.lightMode ? "#16a34a" : "#4ade80", fontSize: 13, fontWeight: 700 }}>Contract Signed</div>
           <div style={{ color: t.subtext, fontSize: 11 }}>Signed {fmtDate(inv.signedAt)} · {inv.openSignSentTo || ""}</div>
         </div>
       </div>
+      {inv.signedPdfUrl && (
+        <div style={{ marginTop: 10 }}>
+          <a href={inv.signedPdfUrl} target="_blank" rel="noopener noreferrer"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: t.surface2, border: `1px solid ${t.accent}`, borderRadius: 6, padding: "6px 12px", color: t.accent, fontSize: 11, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>
+            <Icon d={IC.file} size={12} color={t.accent} /> View Signed PDF
+          </a>
+        </div>
+      )}
     </div>
   );
 
