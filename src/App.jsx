@@ -1736,6 +1736,36 @@ function OpenSignSend({ inv, data, upd, t }) {
   const isSent       = !!inv.openSignUrl;
   const isSigned     = !!inv.signedAt;
 
+  // Poll the backend for the signed-PDF URL once when this invoice is opened.
+  // Self-hosted OpenSign on Railway is missing the `callwebhook` cloud function,
+  // so completion notifications never reach POST /webhooks/opensign. The backend
+  // GET /api/opensign/status/:docId reads the doc directly from Parse and returns
+  // the SignedUrl when IsCompleted, so we can fill in `signedPdfUrl` even though
+  // the webhook never fired.
+  useEffect(() => {
+    if (!inv.openSignDocId || !inv.openSignSentAt || inv.signedPdfUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/status/${encodeURIComponent(inv.openSignDocId)}`, {
+          headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const { completed, signedUrl } = await res.json();
+        if (cancelled || !completed || !signedUrl) return;
+        const patch = { signedPdfUrl: signedUrl };
+        if (!inv.signedAt) patch.signedAt = today();
+        upd(inv.id, patch);
+      } catch (e) {
+        // Best-effort poll — silent failure is fine, user can still mark signed manually.
+        console.warn("OpenSign status poll failed:", e?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [inv.openSignDocId, inv.openSignSentAt, inv.signedPdfUrl]);
+
   // Convert HTML string to base64
   const htmlToBase64 = (html) => {
     const bytes = new TextEncoder().encode(html);
