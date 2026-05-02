@@ -430,6 +430,120 @@ function buildContractHTML(inv, cust, co, contractTerms, logo) {
   </div></body></html>`;
 }
 
+// Builds a Change Order document that amends an existing signed invoice.
+// Original invoice + signature are NOT touched — this is a separate addendum.
+function buildChangeOrderHTML(inv, co, change, cust, logo) {
+  const lines = Array.isArray(change?.lines) ? change.lines : [];
+  const subtotal = lines.reduce((s, l) => s + Number(l?.qty || 0) * Number(l?.unitPrice || 0), 0);
+  const taxAmt = subtotal * (Number(change?.taxRate || 0) / 100);
+  const total = subtotal + taxAmt;
+
+  const lineRows = lines.map(l => `
+    <tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${esc(typeof l?.description === "string" ? l.description : (l?.description ? String(l.description) : "—"))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${esc(l?.qty ?? 0)} ${esc(l?.unit || "")}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">${fmt$(l?.unitPrice)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px">${fmt$(Number(l?.qty || 0) * Number(l?.unitPrice || 0))}</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  <title>Change Order — ${esc(change.number || "")}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#111827;background:#fff;font-size:13px;line-height:1.6}
+    .page{max-width:780px;margin:0 auto;padding:40px 32px}
+    h2{font-size:15px;font-weight:700;color:#b45309;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid #fde68a}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:3px solid #b45309}
+    .co-name{font-size:22px;font-weight:800;color:#b45309;margin-bottom:4px}
+    .ref-box{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #b45309;border-radius:6px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#713f12}
+    .parties{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}
+    .party-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px}
+    .scope-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;white-space:pre-wrap;font-size:13px;color:#374151}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th{background:#b45309;color:#fff;padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+    .totals-box{margin-left:auto;width:260px;margin-top:8px}
+    .t-row{display:flex;justify-content:space-between;padding:5px 0;color:#6b7280;font-size:13px}
+    .t-total{display:flex;justify-content:space-between;padding:12px 0;font-size:20px;font-weight:800;color:#b45309;border-top:2px solid #b45309;margin-top:6px}
+    .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:16px}
+    .sig-box{border-top:2px solid #374151;padding-top:8px}
+    .sig-line{height:48px;border-bottom:1px dashed #d1d5db;margin:8px 0}
+    .ccb-badge{background:#b45309;color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;display:inline-block}
+    .co-badge{background:#b45309;color:#fff;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:800;display:inline-block;letter-spacing:.05em}
+  </style></head><body><div class="page">
+  <div class="header">
+    <div>
+      ${logo ? `<img src="${logo}" style="height:60px;max-width:200px;object-fit:contain;display:block;margin-bottom:8px"/>` : ""}
+      <div class="co-name">${esc(co.name || "Your Company")}</div>
+      <div style="color:#6b7280;font-size:12px;line-height:1.8">
+        ${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}<br>
+        ${esc(co.phone || "")} ${co.email ? `· ${esc(co.email)}` : ""}<br>
+        ${co.ccbNumber ? `<span class="ccb-badge">CCB # ${esc(co.ccbNumber)}</span>` : ""}
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="co-badge">CHANGE ORDER</div>
+      <div style="font-size:28px;font-weight:800;margin-top:8px">${esc(change.number || "")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:6px">Issued: ${fmtDate(change.date || today())}</div>
+    </div>
+  </div>
+
+  <div class="ref-box">
+    <strong>This Change Order amends Invoice #${esc(inv.number || "")}</strong>${inv.date ? ` dated ${fmtDate(inv.date)}` : ""}.
+    The original invoice and any prior signatures remain in full force and effect except as expressly modified below.
+  </div>
+
+  <div class="parties">
+    <div class="party-box">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">Contractor</div>
+      <div style="font-size:15px;font-weight:700">${esc(co.name || "Your Company")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:4px">${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}</div>
+      ${co.ccbNumber ? `<div style="margin-top:6px"><span class="ccb-badge">CCB # ${esc(co.ccbNumber)}</span></div>` : ""}
+    </div>
+    <div class="party-box">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">Owner / Customer</div>
+      <div style="font-size:15px;font-weight:700">${esc(cust?.name || inv.customerName || "—")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:4px">
+        ${cust ? [cust.address, cust.city, cust.state, cust.zip].filter(Boolean).map(esc).join(", ") : ""}
+        ${cust?.phone ? `<br>${esc(cust.phone)}` : ""}${cust?.email ? `<br>${esc(cust.email)}` : ""}
+      </div>
+    </div>
+  </div>
+
+  ${change.description ? `<h2>Description of Change</h2><div class="scope-box">${esc(change.description)}</div>` : ""}
+
+  ${lines.length ? `
+  <h2>Line Items</h2>
+  <table><thead><tr><th>Description</th><th style="text-align:center">Qty/Unit</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead>
+  <tbody>${lineRows}</tbody></table>
+  <div class="totals-box">
+    <div class="t-row"><span>Subtotal</span><span>${fmt$(subtotal)}</span></div>
+    ${Number(change.taxRate) > 0 ? `<div class="t-row"><span>Tax (${esc(change.taxRate)}%)</span><span>${fmt$(taxAmt)}</span></div>` : ""}
+    <div class="t-total"><span>Change Order Total</span><span>${fmt$(total)}</span></div>
+  </div>` : ""}
+
+  <h2>Signatures</h2>
+  <p style="color:#6b7280;font-size:12px;margin-bottom:16px">By signing below, both parties agree to this change to Invoice #${esc(inv.number || "")}.</p>
+  <div class="sig-grid">
+    <div class="sig-box">
+      <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Contractor Signature</div>
+      <div class="sig-line"></div>
+      <div style="font-size:13px;font-weight:600">${esc(co.name || "Contractor")}</div>
+      <div style="color:#6b7280;font-size:11px;margin-top:6px">Date: ____________________</div>
+    </div>
+    <div class="sig-box">
+      <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Owner / Customer Signature</div>
+      <div class="sig-line"></div>
+      <div style="font-size:13px;font-weight:600">${esc(cust?.name || inv.customerName || "Owner")}</div>
+      <div style="color:#6b7280;font-size:11px;margin-top:6px">Date: ____________________</div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">
+    ${esc(co.name || "Your Company")} · CCB # ${esc(co.ccbNumber || "__________")} · ${fmtDate(today())}
+  </div>
+  </div></body></html>`;
+}
+
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard({ data, t, setTab, setInvoiceFilter, setJobFilter }) {
   const paid = data.invoices.filter(i => i.status === "paid").reduce((s, i) => s + (i.total || 0), 0);
@@ -1920,6 +2034,540 @@ function OpenSignSend({ inv, data, upd, t }) {
 }
 
 
+// ─── CHANGE ORDERS ────────────────────────────────────────────────────────────
+// Addendums to a signed invoice. Original invoice + signature are never modified.
+// Each CO is either built in-app (HTML + line items) or uploaded as a custom PDF.
+// Both go through OpenSign for e-signature.
+
+const CO_STATUS_STYLES = {
+  draft:  { color: "#a78bfa", bgDark: "#1a1a2e", bgLight: "#ede9fe", label: "Draft" },
+  sent:   { color: "#f97316", bgDark: "#1a0f00", bgLight: "#ffedd5", label: "Sent" },
+  signed: { color: "#4ade80", bgDark: "#052e16", bgLight: "#dcfce7", label: "Signed" },
+};
+
+function ChangeOrders({ inv, data, setData, t }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing]     = useState(null);
+
+  const list = Array.isArray(inv.changeOrders) ? inv.changeOrders : [];
+
+  const updCO = (coId, patch) => setData(d => ({
+    ...d,
+    invoices: d.invoices.map(i =>
+      i.id === inv.id
+        ? { ...i, changeOrders: (i.changeOrders || []).map(co => co.id === coId ? { ...co, ...patch } : co) }
+        : i
+    ),
+  }));
+
+  const delCO = (coId) => {
+    if (!window.confirm("Delete this change order? This cannot be undone.")) return;
+    setData(d => ({
+      ...d,
+      invoices: d.invoices.map(i =>
+        i.id === inv.id
+          ? { ...i, changeOrders: (i.changeOrders || []).filter(co => co.id !== coId) }
+          : i
+      ),
+    }));
+  };
+
+  const openNew  = () => { setEditing(null); setModalOpen(true); };
+  const openEdit = (co) => { setEditing(co); setModalOpen(true); };
+
+  return (
+    <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <SectionLabel t={t}>📝 Change Orders</SectionLabel>
+        <Btn t={t} size="sm" onClick={openNew}><Icon d={IC.plus} size={12} /> Add Change Order</Btn>
+      </div>
+      <div style={{ color: t.subtext, fontSize: 11, marginBottom: 12, lineHeight: 1.6 }}>
+        Addendums to this invoice. The original invoice and signature stay locked — change orders capture additions, deletions, or scope shifts that need their own sign-off.
+      </div>
+
+      {list.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "16px 0", color: t.muted, fontSize: 12 }}>
+          No change orders yet
+        </div>
+      ) : (
+        list.map(co => {
+          const styles = CO_STATUS_STYLES[co.status] || CO_STATUS_STYLES.draft;
+          const sub = (co.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+          const total = sub + sub * (Number(co.taxRate || 0) / 100);
+          const showTotal = (co.lines || []).length > 0;
+          return (
+            <div key={co.id} style={{ background: t.surface2, borderRadius: 10, padding: 12, marginBottom: 8, border: `1px solid ${t.border}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                <div>
+                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{co.number || ""}</div>
+                  <div style={{ color: t.subtext, fontSize: 11 }}>
+                    {fmtDate(co.date)}
+                    {co.customPdfName ? ` · 📎 ${co.customPdfName}` : ""}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {showTotal && <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>{fmt$(total)}</div>}
+                  <span style={{
+                    background: data.lightMode ? styles.bgLight : styles.bgDark,
+                    color: styles.color,
+                    border: `1px solid ${styles.color}`,
+                    borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 700,
+                  }}>{styles.label.toUpperCase()}</span>
+                </div>
+              </div>
+
+              {co.description && (
+                <div style={{ color: t.subtext, fontSize: 12, marginTop: 4, marginBottom: 6, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                  {String(co.description).slice(0, 200)}{String(co.description).length > 200 ? "…" : ""}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                {co.signedPdfUrl && (
+                  <a href={co.signedPdfUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 6, padding: "5px 10px", color: "#4ade80", fontSize: 11, fontWeight: 600, textDecoration: "none" }}>
+                    📄 View Signed PDF
+                  </a>
+                )}
+                {co.openSignUrl && co.status === "sent" && (
+                  <button onClick={() => { navigator.clipboard.writeText(co.openSignUrl); alert("Signing link copied!"); }}
+                    style={{ background: t.surface, border: `1px solid ${t.accent}`, borderRadius: 6, padding: "5px 10px", color: t.accent, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    📋 Copy Signing Link
+                  </button>
+                )}
+                {co.customPdfUrl && (
+                  <a href={co.customPdfUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", color: t.subtext, fontSize: 11, fontWeight: 600, textDecoration: "none" }}>
+                    📎 Uploaded PDF
+                  </a>
+                )}
+                {co.status === "draft" && (
+                  <button onClick={() => openEdit(co)}
+                    style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", color: t.subtext, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    ✏️ Edit / Send
+                  </button>
+                )}
+                {co.status !== "signed" && (
+                  <button onClick={() => delCO(co.id)}
+                    style={{ marginLeft: "auto", background: "transparent", border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", color: "#ef4444", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    Delete
+                  </button>
+                )}
+              </div>
+
+              {co.openSignSentTo && (
+                <div style={{ color: t.muted, fontSize: 10, marginTop: 6 }}>
+                  Sent to {co.openSignSentTo}{co.openSignSentAt ? ` on ${fmtDate(co.openSignSentAt)}` : ""}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {modalOpen && (
+        <ChangeOrderModal
+          inv={inv}
+          data={data}
+          t={t}
+          existing={editing}
+          updCO={updCO}
+          setData={setData}
+          onClose={() => { setModalOpen(false); setEditing(null); }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function ChangeOrderModal({ inv, data, t, existing, updCO, setData, onClose }) {
+  const co        = data.company || {};
+  const cust      = data.customers.find(c => c.id === inv.customerId);
+  const openCfg   = data.openSignConfig || {};
+  const backendUrl = (openCfg.backendUrl || "").replace(/\/$/, "");
+
+  const nextCONum = () => {
+    const list = inv.changeOrders || [];
+    const nums = list.map(c => parseInt((c.number || "").replace("CO-", "")) || 0);
+    return Math.max(0, ...nums) + 1;
+  };
+
+  const blank = () => ({
+    id: uid(),
+    number: `CO-${String(nextCONum()).padStart(3, "0")}`,
+    date: today(),
+    description: "",
+    lines: [{ id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "labor" }],
+    taxRate: inv.taxRate || 0,
+    status: "draft",
+    customPdfUrl: "",
+    customPdfName: "",
+    customPdfBase64: "",
+  });
+
+  const [form, setForm]     = useState(existing ? JSON.parse(JSON.stringify(existing)) : blank());
+  const [mode, setMode]     = useState(existing?.customPdfUrl ? "upload" : "write");
+  const [signerEmail, setSignerEmail] = useState(cust?.email || "");
+  const [signerName, setSignerName]   = useState(inv.customerName || "");
+  const [phase, setPhase]   = useState("idle"); // idle | uploading | sending | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const isExisting = !!existing;
+
+  const addLine    = () => setForm(f => ({ ...f, lines: [...(f.lines || []), { id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "material" }] }));
+  const removeLine = id => setForm(f => ({ ...f, lines: (f.lines || []).filter(l => l.id !== id) }));
+  const updLine    = (id, k, v) => setForm(f => ({ ...f, lines: (f.lines || []).map(l => l.id === id ? { ...l, [k]: v } : l) }));
+  const subtotal   = (form.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+  const taxAmt     = subtotal * (Number(form.taxRate || 0) / 100);
+  const total      = subtotal + taxAmt;
+
+  const persist = (patch) => {
+    if (isExisting) {
+      updCO(form.id, patch);
+    } else {
+      const newCO = { ...form, ...patch };
+      setData(d => ({
+        ...d,
+        invoices: d.invoices.map(i =>
+          i.id === inv.id
+            ? { ...i, changeOrders: [...(i.changeOrders || []), newCO] }
+            : i
+        ),
+      }));
+    }
+  };
+
+  const saveDraft = () => {
+    persist({
+      number: form.number,
+      date: form.date,
+      description: form.description,
+      lines: form.lines,
+      taxRate: form.taxRate,
+      status: "draft",
+      customPdfUrl: form.customPdfUrl || "",
+      customPdfName: form.customPdfName || "",
+    });
+    onClose();
+  };
+
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.includes("pdf") && !file.name.toLowerCase().endsWith(".pdf")) {
+      setErrorMsg("Please upload a PDF file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("PDF exceeds 10MB limit.");
+      return;
+    }
+    setErrorMsg("");
+    setPhase("uploading");
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = ev => resolve(ev.target.result);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const base64 = String(dataUrl).split(",")[1] || "";
+
+      let storageUrl = "";
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const path = `users/${currentUser.uid}/changeOrders/${form.id}/${file.name}`;
+        const ref = storageRef(storage, path);
+        await uploadString(ref, dataUrl, "data_url");
+        storageUrl = await getDownloadURL(ref);
+      }
+
+      setForm(f => ({ ...f, customPdfUrl: storageUrl, customPdfName: file.name, customPdfBase64: base64 }));
+      setPhase("idle");
+    } catch (err) {
+      setErrorMsg(err.message || "Upload failed");
+      setPhase("error");
+    }
+  };
+
+  const htmlToBase64 = (html) => {
+    const bytes = new TextEncoder().encode(html);
+    let binary  = "";
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  };
+
+  const sendForSignature = async () => {
+    setErrorMsg("");
+    if (!signerEmail.trim())    { setErrorMsg("Enter the customer's email address."); return; }
+    if (!backendUrl)            { setErrorMsg("OpenSign backend not connected. Check Settings → OpenSign™."); return; }
+    if (mode === "upload" && !form.customPdfBase64 && !form.customPdfUrl) {
+      setErrorMsg("Upload a PDF first.");
+      return;
+    }
+    if (mode === "write" && !(form.lines || []).some(l => l.description?.trim()) && !form.description?.trim()) {
+      setErrorMsg("Add a description or at least one line item.");
+      return;
+    }
+
+    setPhase("sending");
+
+    try {
+      let pdfBase64 = "";
+
+      if (mode === "write") {
+        const html = buildChangeOrderHTML(inv, co, form, cust, co.logo || "");
+        pdfBase64  = htmlToBase64(html);
+      } else {
+        // Upload mode — base64 was captured at upload time
+        if (form.customPdfBase64) {
+          pdfBase64 = form.customPdfBase64;
+        } else if (form.customPdfUrl) {
+          // Existing CO — fetch the PDF and re-encode
+          const res = await fetch(form.customPdfUrl);
+          const buf = await res.arrayBuffer();
+          let binary = "";
+          new Uint8Array(buf).forEach(b => binary += String.fromCharCode(b));
+          pdfBase64 = btoa(binary);
+        }
+      }
+
+      const docTitle = `${form.number} — ${inv.customerName} — ${fmt$(total)} (Change to ${inv.number})`;
+
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Not signed in — please refresh and sign in again.");
+
+      const res = await fetch(`${backendUrl}/api/opensign/send`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          documentType: "change_order",
+          title:        docTitle,
+          note:         `Please review and sign this change order to invoice ${inv.number}.`,
+          pdfBase64,
+          signers: [{
+            name:  signerName || inv.customerName,
+            email: signerEmail.trim(),
+            phone: cust?.phone || "",
+            role:  "customer",
+          }],
+          expiresInDays: 30,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+      }
+
+      persist({
+        number:         form.number,
+        date:           form.date,
+        description:    form.description,
+        lines:          form.lines,
+        taxRate:        form.taxRate,
+        customPdfUrl:   form.customPdfUrl || "",
+        customPdfName:  form.customPdfName || "",
+        status:         "sent",
+        openSignUrl:    json.signingUrl || "",
+        openSignDocId:  json.opensignDocId || "",
+        openSignBackendDocId: json.documentId || "",
+        openSignSentTo: signerEmail.trim(),
+        openSignSentAt: today(),
+      });
+
+      onClose();
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to send. Please try again.");
+      setPhase("error");
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "20px 12px", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 12, padding: 18, width: "100%", maxWidth: 640, color: t.text }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{form.number}</div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.text }}>
+              {isExisting ? "Edit Change Order" : "New Change Order"}
+            </h3>
+            <div style={{ color: t.subtext, fontSize: 11, marginTop: 2 }}>Amends {inv.number || ""} · {inv.customerName || ""}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: t.subtext, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Tab switcher */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, background: t.surface, borderRadius: 8, padding: 4 }}>
+          {[
+            { key: "write",  label: "✍️ Write it" },
+            { key: "upload", label: "📎 Upload PDF" },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setMode(tab.key)}
+              style={{
+                flex: 1,
+                background: mode === tab.key ? t.accent : "transparent",
+                color:      mode === tab.key ? "#fff"   : t.subtext,
+                border: "none", borderRadius: 6, padding: "8px 10px",
+                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>{tab.label}</button>
+          ))}
+        </div>
+
+        {/* Common fields */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          <div>
+            <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Customer</div>
+            <input value={inv.customerName || ""} disabled
+              style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.subtext, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Date</div>
+            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+              style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+        </div>
+
+        {mode === "write" ? (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Description — what changed and why</div>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={4}
+                placeholder="e.g. Owner requested upgraded faucet fixtures and an additional outlet on the east wall. Material cost increase plus 4 hours of labor."
+                maxLength={2000}
+                style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.6 }} />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em" }}>Line Items</div>
+                <Btn t={t} size="sm" onClick={addLine}><Icon d={IC.plus} size={12} /> Add</Btn>
+              </div>
+              {(form.lines || []).map((line, idx) => (
+                <div key={line.id} style={{ background: t.surface2, borderRadius: 10, padding: 10, marginBottom: 6, border: `1px solid ${t.border}` }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                    <select value={line.type} onChange={e => updLine(line.id, "type", e.target.value)}
+                      style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "3px 8px", color: line.type === "labor" ? "#60a5fa" : "#f59e0b", fontSize: 11, fontFamily: "inherit" }}>
+                      <option value="labor">Labor</option><option value="material">Material</option><option value="subcontractor">Sub</option><option value="other">Other</option>
+                    </select>
+                    <span style={{ color: t.muted, fontSize: 11 }}>#{idx + 1}</span>
+                    <button onClick={() => removeLine(line.id)}
+                      style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer" }}>
+                      <Icon d={IC.x} size={14} color="#ef4444" />
+                    </button>
+                  </div>
+                  <input value={line.description} onChange={e => updLine(line.id, "description", e.target.value)}
+                    placeholder="Description" maxLength={500}
+                    style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${t.border}`, color: t.text, fontSize: 13, padding: "4px 0", marginBottom: 6, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 8 }}>
+                    {[["QTY", "qty", "number"], ["UNIT", "unit", "text"], ["UNIT PRICE", "unitPrice", "number"]].map(([lbl, key, typ]) => (
+                      <div key={key}>
+                        <div style={{ color: t.subtext, fontSize: 10, marginBottom: 3 }}>{lbl}</div>
+                        <input type={typ} value={line[key]} onChange={e => updLine(line.id, key, e.target.value)}
+                          style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 8px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ textAlign: "right", color: t.accent, fontSize: 12, marginTop: 6, fontWeight: 600 }}>
+                    {fmt$(Number(line.qty || 0) * Number(line.unitPrice || 0))}
+                  </div>
+                </div>
+              ))}
+              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 10, marginTop: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 6 }}><span>Subtotal</span><span>{fmt$(subtotal)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ color: t.subtext, fontSize: 13 }}>Tax (%)</span>
+                  <input type="number" value={form.taxRate} onChange={e => setForm(f => ({ ...f, taxRate: e.target.value }))}
+                    style={{ width: 70, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "4px 8px", color: t.text, fontSize: 13, textAlign: "right", fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 16, fontWeight: 800, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${t.border}` }}>
+                  <span>Change Order Total</span><span style={{ color: "#4ade80" }}>{fmt$(total)}</span>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Description (optional)</div>
+            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3}
+              placeholder="Internal note about this change (not added to the PDF)" maxLength={2000}
+              style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
+
+            <div style={{ background: t.surface2, border: `2px dashed ${t.border}`, borderRadius: 10, padding: 18, textAlign: "center" }}>
+              {form.customPdfName ? (
+                <div>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>📎</div>
+                  <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>{form.customPdfName}</div>
+                  <div style={{ color: t.subtext, fontSize: 11, marginTop: 4 }}>PDF ready to send</div>
+                  <button onClick={() => setForm(f => ({ ...f, customPdfUrl: "", customPdfName: "", customPdfBase64: "" }))}
+                    style={{ marginTop: 10, background: "transparent", border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 12px", color: t.subtext, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                    Replace
+                  </button>
+                </div>
+              ) : (
+                <label style={{ display: "block", cursor: "pointer" }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>⬆️</div>
+                  <div style={{ color: t.text, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Upload PDF</div>
+                  <div style={{ color: t.subtext, fontSize: 11 }}>Max 10MB · PDF only</div>
+                  <input type="file" accept="application/pdf,.pdf" onChange={handlePdfUpload} style={{ display: "none" }} />
+                </label>
+              )}
+            </div>
+            {phase === "uploading" && <div style={{ color: t.accent, fontSize: 12, textAlign: "center", marginTop: 8 }}>Uploading…</div>}
+          </div>
+        )}
+
+        {/* Send section */}
+        <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12, marginTop: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Signer Name</div>
+              <input value={signerName} onChange={e => setSignerName(e.target.value)}
+                style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <div style={{ color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 4 }}>Signer Email</div>
+              <input type="email" value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
+                placeholder="customer@email.com"
+                style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          {errorMsg && (
+            <div style={{ background: data.lightMode ? "#fee2e2" : "#450a0a", border: "1px solid #ef4444", borderRadius: 8, padding: "9px 12px", marginBottom: 10, color: "#f87171", fontSize: 12 }}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={saveDraft} disabled={phase === "sending" || phase === "uploading"}
+              style={{ flex: 1, minWidth: 120, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "11px", color: t.text, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              💾 Save as Draft
+            </button>
+            <button onClick={sendForSignature} disabled={phase === "sending" || phase === "uploading" || !signerEmail.trim()}
+              style={{
+                flex: 2, minWidth: 200,
+                background: phase === "sending" ? "#4c1d95" : "linear-gradient(135deg,#7c3aed,#6d28d9)",
+                border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700,
+                cursor: phase === "sending" || !signerEmail.trim() ? "not-allowed" : "pointer",
+                opacity: !signerEmail.trim() ? 0.6 : 1, fontFamily: "inherit",
+              }}>
+              {phase === "sending" ? "Sending…" : "✍️ Send for Signature"}
+            </button>
+          </div>
+          <div style={{ color: t.muted, fontSize: 10, marginTop: 8, textAlign: "center" }}>
+            Customer receives an OpenSign email with a secure signing link. The original invoice is not modified.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // FILE 4: OpenSign Settings section for App.jsx
 // Paste inside the Settings component return, after the AI Estimator card
@@ -2202,6 +2850,9 @@ function Invoices({ data, setData, t, initialFilter }) {
           </div>
           <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
         </Card>
+
+        {/* ── CHANGE ORDERS ─────────────────────────────────────── */}
+        <ChangeOrders inv={inv} data={data} setData={setData} t={t} />
 
         {/* ── SEND INVOICE ACTION CENTER ─────────────────────────── */}
         <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
