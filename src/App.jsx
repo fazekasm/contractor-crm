@@ -107,6 +107,7 @@ const STATUSES = [
   { key:"active",    label:"In Progress",    color:"#8b5cf6", bg:"#2e1065", lightColor:"#7c3aed", lightBg:"#ede9fe" },
   { key:"complete",  label:"Complete",       color:"#10b981", bg:"#022c22", lightColor:"#059669", lightBg:"#d1fae5" },
   { key:"invoiced",  label:"Invoiced",       color:"#f97316", bg:"#431407", lightColor:"#c2410c", lightBg:"#ffedd5" },
+  { key:"declined",  label:"Declined",       color:"#fb923c", bg:"#431407", lightColor:"#b45309", lightBg:"#fed7aa" },
   { key:"signed",    label:"Signed",         color:"#4ade80", bg:"#0d2d1a", lightColor:"#166534", lightBg:"#dcfce7" },
   { key:"paid",      label:"Paid",           color:"#4ade80", bg:"#052e16", lightColor:"#16a34a", lightBg:"#dcfce7" },
 ];
@@ -2060,7 +2061,8 @@ function OpenSignSend({ inv, data, upd, t }) {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const isSent       = !!inv.openSignUrl;
+  const isDeclined   = inv.status === "declined";
+  const isSent       = !!inv.openSignUrl && !isDeclined;
   const isSigned     = !!inv.signedAt;
 
   // Poll the backend for the signed-PDF URL once when this invoice is opened.
@@ -2080,8 +2082,14 @@ function OpenSignSend({ inv, data, upd, t }) {
           headers: { "Authorization": `Bearer ${token}` },
         });
         if (!res.ok) return;
-        const { completed, signedUrl } = await res.json();
-        if (cancelled || !completed || !signedUrl) return;
+        const body = await res.json();
+        if (cancelled) return;
+        const { completed, signedUrl, declined } = body;
+        if (declined && inv.status !== "declined") {
+          upd(inv.id, { status: "declined" });
+          return;
+        }
+        if (!completed || !signedUrl) return;
         const patch = { signedPdfUrl: signedUrl };
         if (!inv.signedAt) patch.signedAt = today();
         if (inv.status !== "paid") patch.status = "signed";
@@ -2344,6 +2352,18 @@ function OpenSignSend({ inv, data, upd, t }) {
     </div>
   );
 
+  const recallAndEdit = () => {
+    if (!window.confirm("This will void the current signing request. The client's link will no longer work. Continue?")) return;
+    upd(inv.id, {
+      openSignUrl: "",
+      openSignDocId: "",
+      openSignBackendDocId: "",
+      openSignSentTo: "",
+      openSignSentAt: "",
+      status: "invoiced",
+    });
+  };
+
   // Sent, awaiting signature
   if (isSent && !showForm) return (
     <div style={{ background: `${t.accent}08`, border: `1px solid ${t.accent}`, borderRadius: 10, padding: 14 }}>
@@ -2375,6 +2395,10 @@ function OpenSignSend({ inv, data, upd, t }) {
           style={{ background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 12px", color: t.subtext, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           ✉️ Resend to Different Email
         </button>
+        <button onClick={recallAndEdit}
+          style={{ background: t.surface2, border: `1px solid #f97316`, borderRadius: 6, padding: "6px 12px", color: "#f97316", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          ↩️ Recall & Edit
+        </button>
       </div>
     </div>
   );
@@ -2390,6 +2414,11 @@ function OpenSignSend({ inv, data, upd, t }) {
       <div style={{ color: t.subtext, fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
         OpenSign will email the customer a signing link. They sign in their browser — no account needed. Both parties get a completion certificate automatically.
       </div>
+      {isDeclined && (
+        <div style={{ background: data.lightMode ? "#fed7aa" : "#431407", border: "1px solid #f97316", borderRadius: 8, padding: "10px 12px", marginBottom: 10, color: "#fb923c", fontSize: 12, fontWeight: 600 }}>
+          ⚠️ Customer declined the previous signing request. Edit the invoice and resend.
+        </div>
+      )}
       <div style={{ marginBottom: 10 }}>
         <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Customer Name</label>
         <input value={signerName} onChange={e => setSignerName(e.target.value)}
@@ -3244,6 +3273,7 @@ function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [editingContract, setEditingContract] = useState(false);
+  const [editingLines, setEditingLines] = useState(false);
   const [localFilter, setLocalFilter] = useState(initialFilter || "all");
 
   const upd = (id, patch) => setData(d => ({ ...d, invoices: d.invoices.map(i => i.id === id ? { ...i, ...patch } : i) }));
@@ -3251,6 +3281,74 @@ function Invoices({ data, setData, t, initialFilter }) {
   const markUnpaid = id => upd(id, { status: "invoiced", paidAt: null });
   const markSigned = id => upd(id, { signedAt: today() });
   const del = id => { if (window.confirm("Delete invoice?")) setData(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) })); };
+
+  const nextInvNum = () => { const nums = data.invoices.map(i => parseInt((i.number || "").replace("INV-","")) || 0); return Math.max(0, ...nums) + 1; };
+
+  // Line item helpers — operate on the current invoice
+  const updLine = (invId, lineId, k, v) => upd(invId, {
+    lines: (data.invoices.find(i => i.id === invId)?.lines || []).map(l => l.id === lineId ? { ...l, [k]: v } : l),
+  });
+  const addLine = (invId) => upd(invId, {
+    lines: [...((data.invoices.find(i => i.id === invId)?.lines) || []), { id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "material" }],
+  });
+  const removeLine = (invId, lineId) => upd(invId, {
+    lines: ((data.invoices.find(i => i.id === invId)?.lines) || []).filter(l => l.id !== lineId),
+  });
+
+  const createBalanceInvoice = (origInv) => {
+    const origSub = (origInv.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+    const origTotal = origSub + origSub * (Number(origInv.taxRate || 0) / 100);
+    const paidSum = (origInv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const remainingBalance = Math.max(0, origTotal - paidSum);
+    if (remainingBalance <= 0) { alert("No remaining balance on the original invoice."); return; }
+
+    const due = new Date();
+    due.setDate(due.getDate() + 7);
+    const dueDate = due.toISOString().split("T")[0];
+
+    const balanceInv = {
+      id: uid(),
+      number: `INV-${String(nextInvNum()).padStart(4, "0")}`,
+      customerId: origInv.customerId,
+      customerName: origInv.customerName,
+      jobId: origInv.jobId,
+      jobTitle: origInv.jobTitle,
+      estimateId: origInv.estimateId,
+      date: today(),
+      dueDate,
+      lines: [{
+        id: uid(),
+        description: `Balance Due — Invoice #${origInv.number}`,
+        qty: 1,
+        unit: "ea",
+        unitPrice: remainingBalance,
+        type: "labor",
+      }],
+      taxRate: 0,
+      notes: `Balance due on original contract signed ${origInv.signedAt ? fmtDate(origInv.signedAt) : ""}. Original Invoice #${origInv.number}.`,
+      status: "invoiced",
+      linkedInvoiceId: origInv.id,
+      linkedInvoiceNumber: origInv.number,
+      requiresSignature: false,
+      payments: [],
+      depositRequested: false,
+      depositAmount: 0,
+      depositPaid: false,
+      depositPaidDate: null,
+      contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" },
+      photos: [],
+      openSignUrl: "",
+      openSignDocId: "",
+      openSignSentTo: "",
+      openSignSentAt: "",
+      signedAt: "",
+    };
+    setData(d => ({ ...d, invoices: [...d.invoices, balanceInv] }));
+    setSelected(balanceInv);
+    setEditingContract(false);
+    setEditingLines(false);
+    setView("detail");
+  };
 
   const openVenmo = inv => {
     const h = (data.company || {}).venmoHandle || "";
@@ -3382,20 +3480,59 @@ function Invoices({ data, setData, t, initialFilter }) {
     const taxAmt = sub * (Number(inv.taxRate || 0) / 100);
     const total = sub + taxAmt;
     const ct = inv.contractTerms || {};
+    const paymentsSum = (inv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const isBalanceInvoice = inv.requiresSignature === false && !!inv.linkedInvoiceId;
+    const linkedInv = isBalanceInvoice ? data.invoices.find(i => i.id === inv.linkedInvoiceId) : null;
+    const isFullySent = !!inv.openSignSentAt && inv.status !== "declined" && inv.status !== "signed" && inv.status !== "paid";
+    // Editable when: not yet sent, OR declined, OR (invoiced + not sent yet)
+    const canEditInline = !inv.openSignSentAt || inv.status === "declined";
+    // For signed/paid invoices that aren't fully paid up — show "Create Balance Invoice"
+    const canCreateBalance = (inv.status === "signed" || inv.status === "paid") && (inv.payments || []).length > 0 && paymentsSum < total && !isBalanceInvoice;
 
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
           <Btn t={t} variant="ghost" size="sm" onClick={() => setView("list")}><Icon d={IC.back} size={14} /> Back</Btn>
           <div>
-            <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+              {isBalanceInvoice && (
+                <span style={{ background: `${t.accent}22`, color: t.accent, border: `1px solid ${t.accent}`, borderRadius: 12, padding: "1px 8px", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em" }}>BALANCE</span>
+              )}
+            </div>
             <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</h2>
           </div>
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
-            <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}</span>
+            <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : inv.status === "declined" ? "#fb923c" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
+            {inv.status === "declined" ? (
+              <span style={{ background: data.lightMode ? "#fed7aa" : "#431407", color: "#fb923c", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>⚠ DECLINED</span>
+            ) : (
+              <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}</span>
+            )}
           </div>
         </div>
+
+        {/* Balance Invoice — running balance summary at top */}
+        {isBalanceInvoice && linkedInv && (() => {
+          const origSub = (linkedInv.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+          const origTotal = origSub + origSub * (Number(linkedInv.taxRate || 0) / 100);
+          const origPaid = (linkedInv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+          const balanceDue = Math.max(0, origTotal - origPaid);
+          return (
+            <Card t={t} style={{ marginBottom: 14, border: `2px solid ${t.accent}`, padding: 16 }}>
+              <SectionLabel t={t}>📊 Balance Summary</SectionLabel>
+              <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 6 }}>
+                <span>Original Contract (#{linkedInv.number})</span><span style={{ color: t.text }}>{fmt$(origTotal)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 6 }}>
+                <span>Deposit Paid</span><span style={{ color: "#4ade80" }}>−{fmt$(origPaid)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 16, fontWeight: 800, paddingTop: 8, borderTop: `1px solid ${t.border}`, marginTop: 6 }}>
+                <span>Balance Due</span><span style={{ color: t.accent }}>{fmt$(balanceDue)}</span>
+              </div>
+            </Card>
+          );
+        })()}
 
         {/* Status badges */}
         <Card t={t} style={{ marginBottom: 14, padding: 16 }}>
@@ -3440,17 +3577,162 @@ function Invoices({ data, setData, t, initialFilter }) {
           )}
         </Card>
 
-        {/* ── PROMINENT: Send via OpenSign ─────────────────────────── */}
-        <Card t={t} style={{ marginBottom: 14, background: "linear-gradient(135deg,#130a1f,#1a0a2e)", border: "2px solid #7c3aed" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 22 }}>✍️</span>
-            <div>
-              <div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>Send via OpenSign™</div>
-              <div style={{ color: "#a78bfa", fontSize: 11 }}>Customer signs in their browser — no account needed</div>
-            </div>
+        {/* ── EDIT INVOICE — line items, tax, dates, notes ──────────── */}
+        <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <SectionLabel t={t}>📝 Invoice Details</SectionLabel>
+            {canEditInline ? (
+              <Btn t={t} size="sm" variant="ghost" onClick={() => setEditingLines(e => !e)}>
+                <Icon d={IC.edit} size={12} /> {editingLines ? "Done" : "Edit Invoice"}
+              </Btn>
+            ) : (inv.status !== "signed" && inv.status !== "paid") ? (
+              <button
+                onClick={() => {
+                  if (!window.confirm("This will void the current signing request. The client's link will no longer work. Continue?")) return;
+                  upd(inv.id, {
+                    openSignUrl: "",
+                    openSignDocId: "",
+                    openSignBackendDocId: "",
+                    openSignSentTo: "",
+                    openSignSentAt: "",
+                    status: "invoiced",
+                  });
+                  setEditingLines(true);
+                }}
+                style={{ background: t.surface2, border: `1px solid #f97316`, borderRadius: 6, padding: "6px 12px", color: "#f97316", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                ↩️ Recall & Edit
+              </button>
+            ) : null}
           </div>
-          <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
+
+          {editingLines ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <Inp t={t} label="Date" value={inv.date || ""} onChange={v => upd(inv.id, { date: v })} type="date" />
+                <Inp t={t} label="Due Date" value={inv.dueDate || ""} onChange={v => upd(inv.id, { dueDate: v })} type="date" />
+              </div>
+              <Inp t={t} label="Job Title" value={inv.jobTitle || ""} onChange={v => upd(inv.id, { jobTitle: v })} />
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, marginTop: 6 }}>
+                <div style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Line Items</div>
+                <Btn t={t} size="sm" onClick={() => addLine(inv.id)}><Icon d={IC.plus} size={12} /> Add</Btn>
+              </div>
+              {(inv.lines || []).map((line, idx) => (
+                <div key={line.id} style={{ background: t.surface2, borderRadius: 10, padding: 12, marginBottom: 8, border: `1px solid ${t.border}` }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+                    <select value={line.type || "labor"} onChange={e => updLine(inv.id, line.id, "type", e.target.value)}
+                      style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "4px 8px", color: line.type === "labor" ? "#60a5fa" : "#f59e0b", fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                      <option value="labor">Labor</option><option value="material">Material</option><option value="subcontractor">Sub</option><option value="other">Other</option>
+                    </select>
+                    <span style={{ color: t.muted, fontSize: 12 }}>#{idx + 1}</span>
+                    <button onClick={() => removeLine(inv.id, line.id)} style={{ marginLeft: "auto", background: "none", border: "none", color: "#ef4444", cursor: "pointer" }}><Icon d={IC.x} size={14} color="#ef4444" /></button>
+                  </div>
+                  <input value={line.description || ""} onChange={e => updLine(inv.id, line.id, "description", e.target.value)} placeholder="Description" maxLength={500}
+                    style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${t.border}`, color: t.text, fontSize: 14, padding: "4px 0", marginBottom: 8, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 8 }}>
+                    {[["QTY", "qty", "number"], ["UNIT", "unit", "text"], ["UNIT PRICE", "unitPrice", "number"]].map(([lbl, key, typ]) => (
+                      <div key={key}>
+                        <div style={{ color: t.subtext, fontSize: 10, marginBottom: 3 }}>{lbl}</div>
+                        <input type={typ} value={line[key] ?? ""} onChange={e => updLine(inv.id, line.id, key, e.target.value)}
+                          style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 8px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ textAlign: "right", color: t.accent, fontSize: 13, marginTop: 8, fontWeight: 600 }}>{fmt$(Number(line.qty || 0) * Number(line.unitPrice || 0))}</div>
+                </div>
+              ))}
+              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 14, marginBottom: 6 }}><span>Subtotal</span><span>{fmt$(sub)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ color: t.subtext, fontSize: 14 }}>Tax (%)</span>
+                  <input type="number" value={inv.taxRate ?? 0} onChange={e => upd(inv.id, { taxRate: e.target.value })}
+                    style={{ width: 70, background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 6, padding: "4px 8px", color: t.text, fontSize: 14, textAlign: "right", fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 18, fontWeight: 800, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}><span>Total</span><span style={{ color: "#4ade80" }}>{fmt$(total)}</span></div>
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <Inp t={t} label="Notes" value={inv.notes || ""} onChange={v => upd(inv.id, { notes: v })} rows={3} placeholder="Scope details, exclusions, terms..." />
+              </div>
+            </>
+          ) : (
+            <>
+              {(inv.lines || []).length === 0 ? (
+                <div style={{ color: t.muted, fontSize: 12, textAlign: "center", padding: "12px 0" }}>No line items</div>
+              ) : (
+                <div style={{ marginBottom: 10 }}>
+                  {(inv.lines || []).map(l => (
+                    <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: t.surface2, borderRadius: 8, marginBottom: 6, border: `1px solid ${t.border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: t.text, fontSize: 13, fontWeight: 600 }}>{l.description || <span style={{ color: t.muted }}>(no description)</span>}</div>
+                        <div style={{ color: t.subtext, fontSize: 11 }}>{Number(l.qty || 0)} {l.unit || ""} @ {fmt$(l.unitPrice)}</div>
+                      </div>
+                      <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>{fmt$(Number(l.qty || 0) * Number(l.unitPrice || 0))}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 4 }}><span>Subtotal</span><span>{fmt$(sub)}</span></div>
+                {Number(inv.taxRate || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 4 }}><span>Tax ({inv.taxRate}%)</span><span>{fmt$(taxAmt)}</span></div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 15, fontWeight: 700, paddingTop: 6, borderTop: `1px solid ${t.border}`, marginTop: 6 }}>
+                  <span>Total</span><span>{fmt$(total)}</span>
+                </div>
+              </div>
+              {inv.notes && (
+                <div style={{ marginTop: 10, padding: "8px 10px", background: t.surface2, borderRadius: 6 }}>
+                  <span style={{ color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Notes: </span>
+                  <span style={{ color: t.text, fontSize: 13 }}>{inv.notes}</span>
+                </div>
+              )}
+            </>
+          )}
         </Card>
+
+        {/* ── CREATE BALANCE INVOICE ────────────────────────────── */}
+        {canCreateBalance && (
+          <Card t={t} style={{ marginBottom: 14, border: `2px solid ${t.accent}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 22 }}>📄</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>Create Balance Invoice</div>
+                <div style={{ color: t.subtext, fontSize: 11 }}>{fmt$(total - paymentsSum)} remaining — covered by this signed contract, no new signature needed</div>
+              </div>
+            </div>
+            <button onClick={() => createBalanceInvoice(inv)}
+              style={{ width: "100%", background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "11px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              + Create Balance Invoice for {fmt$(total - paymentsSum)}
+            </button>
+          </Card>
+        )}
+
+        {/* ── PROMINENT: Send via OpenSign — hidden on balance invoices ─────────── */}
+        {isBalanceInvoice ? (
+          <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 22 }}>✅</span>
+              <div>
+                <div style={{ color: t.text, fontSize: 14, fontWeight: 700 }}>No signature required</div>
+                <div style={{ color: t.subtext, fontSize: 11 }}>Covered by original signed contract #{inv.linkedInvoiceNumber}</div>
+              </div>
+            </div>
+            <div style={{ color: t.subtext, fontSize: 12, lineHeight: 1.5 }}>
+              Send a payment request via 📧 Email Invoice or 💬 Text below.
+            </div>
+          </Card>
+        ) : (
+          <Card t={t} style={{ marginBottom: 14, background: "linear-gradient(135deg,#130a1f,#1a0a2e)", border: "2px solid #7c3aed" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 22 }}>✍️</span>
+              <div>
+                <div style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>Send via OpenSign™</div>
+                <div style={{ color: "#a78bfa", fontSize: 11 }}>Customer signs in their browser — no account needed</div>
+              </div>
+            </div>
+            <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
+          </Card>
+        )}
 
         {/* ── PAYMENTS & DEPOSIT ─────────────────────────────────── */}
         <InvoicePayments inv={inv} total={total} upd={upd} markPaid={markPaid} t={t} lightMode={data.lightMode} />
@@ -3642,24 +3924,39 @@ function Invoices({ data, setData, t, initialFilter }) {
           const sub = (inv.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
           const total = sub + sub * (Number(inv.taxRate || 0) / 100);
           return (
-            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setView("detail"); }}>
+            <Card key={inv.id} t={t} style={{ marginBottom: 12, cursor: "pointer" }} onClick={() => { setSelected(inv); setEditingContract(false); setEditingLines(false); setView("detail"); }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div>
-                  <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ color: t.accent, fontSize: 12, fontWeight: 700 }}>{String(inv.number || "")}</div>
+                    {inv.requiresSignature === false && inv.linkedInvoiceId && (
+                      <span style={{ background: `${t.accent}22`, color: t.accent, border: `1px solid ${t.accent}`, borderRadius: 10, padding: "1px 6px", fontSize: 9, fontWeight: 700, letterSpacing: "0.05em" }}>BALANCE</span>
+                    )}
+                  </div>
                   <div style={{ color: t.text, fontSize: 15, fontWeight: 600 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</div>
                   <div style={{ color: t.subtext, fontSize: 12 }}>{typeof inv.jobTitle === "string" ? inv.jobTitle : String(inv.jobTitle || "")} · {fmtDate(inv.date)}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
-                  <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
-                    {inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}
-                  </span>
+                  <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : inv.status === "declined" ? "#fb923c" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
+                  {inv.status === "declined" ? (
+                    <span style={{ background: data.lightMode ? "#fed7aa" : "#431407", color: "#fb923c", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>⚠ DECLINED</span>
+                  ) : (
+                    <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                      {inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
-                  {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Signature"}
-                </div>
+                {inv.requiresSignature === false ? (
+                  <div style={{ background: `${t.accent}11`, border: `1px solid ${t.accent}55`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.accent }}>
+                    📄 No signature required
+                  </div>
+                ) : (
+                  <div style={{ background: inv.signedAt ? "#052e16" : "#1a1a2e", border: `1px solid ${inv.signedAt ? "#16a34a" : "#4c1d95"}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: inv.signedAt ? "#4ade80" : "#a78bfa" }}>
+                    {inv.signedAt ? "✅ Signed" : inv.openSignUrl ? "🔗 Link Ready" : "✍️ Needs Signature"}
+                  </div>
+                )}
                 {(inv.photos || []).length > 0 && (
                   <div style={{ background: t.muted, border: `1px solid ${t.border}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: t.subtext }}>📷 {inv.photos.length} photo{inv.photos.length !== 1 ? "s" : ""}</div>
                 )}
