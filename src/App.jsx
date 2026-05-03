@@ -2125,10 +2125,18 @@ function OpenSignSend({ inv, data, upd, t }) {
     try {
       // Build the invoice+contract HTML
       const co   = data.company || {};
-      const html = buildContractHTML(invoice, cust, co, invoice.contractTerms || {}, co.logo || "");
 
-      // Convert to base64
-      const base64File = htmlToBase64(html);
+      // If a custom contract PDF was uploaded in Settings, send that instead of the generated HTML.
+      // customContract is stored as a data URL (data:application/pdf;base64,...) — strip the prefix.
+      // Backend detects %PDF magic bytes and routes accordingly.
+      let base64File;
+      if (co.customContract) {
+        const m = /^data:[^;]+;base64,(.*)$/.exec(co.customContract);
+        base64File = m ? m[1] : co.customContract;
+      } else {
+        const html = buildContractHTML(invoice, cust, co, invoice.contractTerms || {}, co.logo || "");
+        base64File = htmlToBase64(html);
+      }
 
       // Calculate total for the document title
       const sub   = (invoice.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
