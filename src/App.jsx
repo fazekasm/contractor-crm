@@ -2331,8 +2331,41 @@ function OpenSignSend({ inv, data, upd, t }) {
   };
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  // The contractor signing iframe modal needs to be reachable from every
+  // render branch — confirmAndSend fires `upd()` (which makes isSent=true)
+  // and `setSigningIframeUrl(...)` in the same tick, so by next render the
+  // component takes the "Sent, awaiting signature" early return. Without
+  // this shared overlay, the modal JSX would never mount.
+  const signingModal = signingIframeUrl && (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: t.bg, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+        <div style={{ fontWeight: 600, color: t.text }}>Sign Contract</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => window.open(signingIframeUrl, '_blank')}
+            style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
+          >Open in tab</button>
+          <button
+            onClick={() => setSigningIframeUrl(null)}
+            style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
+          >✕ Close</button>
+        </div>
+      </div>
+      <iframe
+        src={signingIframeUrl}
+        style={{ flex: 1, border: 'none', width: '100%' }}
+        title="Sign Contract"
+        allow="camera; microphone"
+      />
+      <div style={{ padding: '8px 16px', background: t.surface, borderTop: `1px solid ${t.border}`, color: t.subtext, fontSize: 12, textAlign: 'center', flexShrink: 0 }}>
+        After signing, close this window and the invoice will update automatically.
+      </div>
+    </div>
+  );
+
   // Already signed
   if (isSigned) return (
+    <>
     <div style={{ background: data.lightMode ? "#dcfce7" : "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 20 }}>✅</span>
@@ -2350,6 +2383,8 @@ function OpenSignSend({ inv, data, upd, t }) {
         </div>
       )}
     </div>
+    {signingModal}
+    </>
   );
 
   const recallAndEdit = () => {
@@ -2366,6 +2401,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   // Sent, awaiting signature
   if (isSent && !showForm) return (
+    <>
     <div style={{ background: `${t.accent}08`, border: `1px solid ${t.accent}`, borderRadius: 10, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <span style={{ fontSize: 20, flexShrink: 0 }}>📧</span>
@@ -2401,6 +2437,8 @@ function OpenSignSend({ inv, data, upd, t }) {
         </button>
       </div>
     </div>
+    {signingModal}
+    </>
   );
 
   // Send form
@@ -2460,32 +2498,7 @@ function OpenSignSend({ inv, data, upd, t }) {
         <iframe srcDoc={contractPreviewHtml} style={{ flex: 1, border: 'none', width: '100%' }} />
       </div>
     )}
-    {signingIframeUrl && (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: t.bg, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: t.surface, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-          <div style={{ fontWeight: 600, color: t.text }}>Sign Contract</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => window.open(signingIframeUrl, '_blank')}
-              style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
-            >Open in tab</button>
-            <button
-              onClick={() => setSigningIframeUrl(null)}
-              style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtext, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}
-            >✕ Close</button>
-          </div>
-        </div>
-        <iframe
-          src={signingIframeUrl}
-          style={{ flex: 1, border: 'none', width: '100%' }}
-          title="Sign Contract"
-          allow="camera; microphone"
-        />
-        <div style={{ padding: '8px 16px', background: t.surface, borderTop: `1px solid ${t.border}`, color: t.subtext, fontSize: 12, textAlign: 'center', flexShrink: 0 }}>
-          After signing, close this window and the invoice will update automatically.
-        </div>
-      </div>
-    )}
+    {signingModal}
     </>
   );
 }
