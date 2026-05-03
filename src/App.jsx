@@ -1284,12 +1284,28 @@ function EstimateSendActions({ form, data, t }) {
   };
 
   const textEstimate = async () => {
+    if (!auth.currentUser) { showToast("Sign in to send.", false); return; }
     setSending("text");
     try {
       const total = computeTotal();
       const custName = cust?.name || form.customerName || "there";
-      // Simple fallback: copy summary to clipboard and try to open native SMS app.
-      const summary = `Hi ${custName}, here's your estimate ${form.number} for ${fmt$(total)}${form.jobTitle ? ` — ${form.jobTitle}` : ""}. From ${co.name || "your contractor"}.`;
+
+      // Pre-cache the rendered HTML so the public PDF link works for the
+      // recipient (who won't be authenticated when they tap it in SMS).
+      const html = buildEstimateHTML(form, cust, co, co.logo || "");
+      const idToken = await auth.currentUser.getIdToken();
+      const cacheRes = await fetch(`${OPENSIGN_BACKEND_URL}/api/estimates/cache-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({ estimateId: form.id, html }),
+      });
+      const cacheJson = await cacheRes.json().catch(() => ({}));
+      if (!cacheRes.ok || cacheJson.error) {
+        throw new Error(cacheJson.error || `Backend error: ${cacheRes.status}`);
+      }
+
+      const pdfUrl = `${OPENSIGN_BACKEND_URL}/api/estimates/pdf/${form.id}`;
+      const summary = `Hi ${custName}, here's your estimate ${form.number} for ${fmt$(total)}${form.jobTitle ? ` — ${form.jobTitle}` : ""}: ${pdfUrl}`;
       try { await navigator.clipboard.writeText(summary); } catch {}
       const phone = cust?.phone ? cust.phone.replace(/[^\d+]/g, "") : "";
       const smsUrl = phone
@@ -1297,7 +1313,7 @@ function EstimateSendActions({ form, data, t }) {
         : `sms:?body=${encodeURIComponent(summary)}`;
       const w = window.open(smsUrl, "_blank");
       if (!w) window.location.href = smsUrl;
-      showToast("Estimate copied to clipboard — paste into your SMS app");
+      showToast("Estimate link copied to clipboard — paste into your SMS app");
     } catch (e) {
       showToast(`Failed: ${e.message}`, false);
     }
