@@ -2276,7 +2276,8 @@ function OpenSignSend({ inv, data, upd, t }) {
 
       const json = await res.json();
       if (!res.ok || json.error) {
-        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+        const detail = json.error && json.message ? `${json.error}: ${json.message}` : (json.error || json.message);
+        throw new Error(detail || `Backend error: ${res.status}`);
       }
 
       signingUrl   = json.signingUrl || "";
@@ -2330,7 +2331,8 @@ function OpenSignSend({ inv, data, upd, t }) {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+        const detail = json.error && json.message ? `${json.error}: ${json.message}` : (json.error || json.message);
+        throw new Error(detail || `Backend error: ${res.status}`);
       }
       setPhase("sent");
       alert("Reminder sent to " + inv.openSignSentTo);
@@ -2854,7 +2856,8 @@ function ChangeOrderModal({ inv, data, t, existing, updCO, setData, onClose }) {
 
       const json = await res.json();
       if (!res.ok || json.error) {
-        throw new Error(json.error || json.message || `Backend error: ${res.status}`);
+        const detail = json.error && json.message ? `${json.error}: ${json.message}` : (json.error || json.message);
+        throw new Error(detail || `Backend error: ${res.status}`);
       }
 
       persist({
