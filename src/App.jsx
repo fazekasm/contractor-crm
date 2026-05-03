@@ -1138,6 +1138,196 @@ function AIScopeWriter({ aiConfig, lines, jobTitle, onApply, t }) {
   );
 }
 
+// ─── ESTIMATE HTML BUILDER ────────────────────────────────────────────────────
+function buildEstimateHTML(est, cust, co, logo) {
+  const lines = Array.isArray(est?.lines) ? est.lines : [];
+  const subtotal = lines.reduce((s, l) => s + Number(l?.qty || 0) * Number(l?.unitPrice || 0), 0);
+  const taxAmt = subtotal * (Number(est?.taxRate || 0) / 100);
+  const total = subtotal + taxAmt;
+  const depAmt = est?.depositPercent ? total * (Number(est.depositPercent) / 100) : Number(est?.depositAmount || 0);
+
+  const lineRows = lines.map(l => `
+    <tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;color:#374151;font-size:13px">${esc(typeof l?.description === "string" ? l.description : (l?.description ? String(l.description) : "—"))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:13px">${esc(l?.qty ?? 0)} ${esc(l?.unit || "")}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">${fmt$(l?.unitPrice)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#111827;font-size:13px">${fmt$(Number(l?.qty || 0) * Number(l?.unitPrice || 0))}</td>
+    </tr>`).join("");
+
+  const photoSection = (est.photos && est.photos.length > 0) ? `
+    <div style="margin-top:32px">
+      <h2 style="font-size:15px;font-weight:700;color:#1d4ed8;margin:0 0 12px;padding-bottom:6px;border-bottom:2px solid #dbeafe">Project Photos</h2>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        ${est.photos.map(p => `
+          <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+            <img src="${p.url || p.dataUrl}" style="width:100%;height:140px;object-fit:cover;display:block"/>
+            ${p.caption ? `<div style="padding:6px 8px;font-size:11px;color:#6b7280;background:#f9fafb">${esc(p.caption)}${p.label ? ` · <strong>${esc(p.label)}</strong>` : ""}</div>` : ""}
+          </div>`).join("")}
+      </div>
+    </div>` : "";
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  <title>Estimate — ${esc(est.number || "")}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#111827;background:#fff;font-size:13px;line-height:1.6}
+    .page{max-width:780px;margin:0 auto;padding:40px 32px}
+    h2{font-size:15px;font-weight:700;color:#1d4ed8;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid #dbeafe}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:3px solid #1d4ed8}
+    .co-name{font-size:22px;font-weight:800;color:#1d4ed8;margin-bottom:4px}
+    .parties{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}
+    .party-box{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:14px}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th{background:#1d4ed8;color:#fff;padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+    .totals-box{margin-left:auto;width:260px;margin-top:8px}
+    .t-row{display:flex;justify-content:space-between;padding:5px 0;color:#6b7280;font-size:13px}
+    .t-total{display:flex;justify-content:space-between;padding:12px 0;font-size:20px;font-weight:800;color:#1d4ed8;border-top:2px solid #1d4ed8;margin-top:6px}
+    .notice{background:#fefce8;border-left:4px solid #ca8a04;padding:12px 16px;margin:16px 0;font-size:12px;color:#713f12;border-radius:0 6px 6px 0}
+    .deposit-box{background:#eef2ff;border:2px solid #4f46e5;border-radius:10px;padding:14px 18px;margin:16px 0;color:#3730a3;font-size:14px;font-weight:600}
+    .ccb-badge{background:#1d4ed8;color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;display:inline-block}
+  </style></head><body><div class="page">
+  <div class="header">
+    <div>
+      ${logo ? `<img src="${logo}" style="height:60px;max-width:200px;object-fit:contain;display:block;margin-bottom:8px"/>` : ""}
+      <div class="co-name">${esc(co.name || "Your Company")}</div>
+      <div style="color:#6b7280;font-size:12px;line-height:1.8">
+        ${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}<br>
+        ${esc(co.phone || "")} ${co.email ? `· ${esc(co.email)}` : ""}<br>
+        ${co.ccbNumber ? `<span class="ccb-badge">CCB # ${esc(co.ccbNumber)}</span>` : ""}
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.08em">Estimate</div>
+      <div style="font-size:28px;font-weight:800">${esc(est.number || "")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:6px">Issued: ${fmtDate(est.date)}</div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party-box">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">From</div>
+      <div style="font-size:15px;font-weight:700">${esc(co.name || "Your Company")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:4px">${[co.address, co.city, co.state, co.zip].filter(Boolean).map(esc).join(", ")}</div>
+    </div>
+    <div class="party-box">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin-bottom:6px">For</div>
+      <div style="font-size:15px;font-weight:700">${esc(cust?.name || est.customerName || "—")}</div>
+      <div style="color:#6b7280;font-size:12px;margin-top:4px">
+        ${cust ? [cust.address, cust.city, cust.state, cust.zip].filter(Boolean).map(esc).join(", ") : ""}
+        ${cust?.phone ? `<br>${esc(cust.phone)}` : ""}${cust?.email ? `<br>${esc(cust.email)}` : ""}
+      </div>
+    </div>
+  </div>
+  ${est.jobTitle ? `<h2>${esc(est.jobTitle)}</h2>` : "<h2>Scope of Work</h2>"}
+  <table><thead><tr><th>Description</th><th style="text-align:center">Qty/Unit</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead>
+  <tbody>${lineRows}</tbody></table>
+  <div class="totals-box">
+    <div class="t-row"><span>Subtotal</span><span>${fmt$(subtotal)}</span></div>
+    ${Number(est.taxRate) > 0 ? `<div class="t-row"><span>Tax (${esc(est.taxRate)}%)</span><span>${fmt$(taxAmt)}</span></div>` : ""}
+    <div class="t-total"><span>Estimate Total</span><span>${fmt$(total)}</span></div>
+  </div>
+  ${est.depositRequested && depAmt > 0 ? `<div class="deposit-box">💰 Deposit required: ${fmt$(depAmt)} before work begins</div>` : ""}
+  ${typeof est.notes === 'string' && est.notes ? `<div class="notice"><strong>Scope Notes:</strong> ${esc(est.notes)}</div>` : ""}
+  ${photoSection}
+  <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:11px">
+    ${esc(co.name || "Your Company")} · ${co.ccbNumber ? `CCB # ${esc(co.ccbNumber)} · ` : ""}${fmtDate(today())}<br/>
+    This is an estimate, not a binding contract. Pricing valid for 30 days.
+  </div>
+  </div></body></html>`;
+}
+
+// ─── ESTIMATE SEND ACTIONS (Email + Text) ─────────────────────────────────────
+function EstimateSendActions({ form, data, t }) {
+  const [sending, setSending] = useState(null); // null | "email" | "text"
+  const [toast, setToast] = useState(null);
+
+  const cust = data.customers.find(c => c.id === form.customerId);
+  const co = data.company || {};
+
+  const showToast = (msg, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const computeTotal = () => {
+    const sub = (form.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.unitPrice || 0), 0);
+    return sub + sub * (Number(form.taxRate || 0) / 100);
+  };
+
+  const emailEstimate = async () => {
+    if (!cust?.email) { showToast("Customer has no email on file. Add one in Clients.", false); return; }
+    if (!auth.currentUser) { showToast("Sign in to send.", false); return; }
+    setSending("email");
+    try {
+      const html = buildEstimateHTML(form, cust, co, co.logo || "");
+      const totalAmount = computeTotal();
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/email/estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({
+          estimateId: form.id,
+          html,
+          customerEmail: cust.email,
+          customerName: cust.name || form.customerName || "",
+          estimateNumber: form.number,
+          totalAmount,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || `Backend error: ${res.status}`);
+      showToast(`Estimate emailed to ${cust.email}`);
+    } catch (e) {
+      showToast(`Failed to email: ${e.message}`, false);
+    }
+    setSending(null);
+  };
+
+  const textEstimate = async () => {
+    setSending("text");
+    try {
+      const total = computeTotal();
+      const custName = cust?.name || form.customerName || "there";
+      // Simple fallback: copy summary to clipboard and try to open native SMS app.
+      const summary = `Hi ${custName}, here's your estimate ${form.number} for ${fmt$(total)}${form.jobTitle ? ` — ${form.jobTitle}` : ""}. From ${co.name || "your contractor"}.`;
+      try { await navigator.clipboard.writeText(summary); } catch {}
+      const phone = cust?.phone ? cust.phone.replace(/[^\d+]/g, "") : "";
+      const smsUrl = phone
+        ? `sms:${phone}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? "&" : "?"}body=${encodeURIComponent(summary)}`
+        : `sms:?body=${encodeURIComponent(summary)}`;
+      const w = window.open(smsUrl, "_blank");
+      if (!w) window.location.href = smsUrl;
+      showToast("Estimate copied to clipboard — paste into your SMS app");
+    } catch (e) {
+      showToast(`Failed: ${e.message}`, false);
+    }
+    setSending(null);
+  };
+
+  return (
+    <Card t={t} style={{ marginBottom: 14 }}>
+      <SectionLabel t={t}>📤 Send Estimate</SectionLabel>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={emailEstimate} disabled={sending === "email"}
+          style={{ flex: 1, minWidth: 140, background: "linear-gradient(135deg,#2563eb,#1d4ed8)", border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: sending === "email" ? "not-allowed" : "pointer", opacity: sending === "email" ? 0.7 : 1, fontFamily: "inherit" }}>
+          {sending === "email" ? "Sending…" : "📧 Email Estimate"}
+        </button>
+        <button onClick={textEstimate} disabled={sending === "text"}
+          style={{ flex: 1, minWidth: 140, background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: sending === "text" ? "not-allowed" : "pointer", opacity: sending === "text" ? 0.7 : 1, fontFamily: "inherit" }}>
+          {sending === "text" ? "Working…" : "💬 Text Estimate"}
+        </button>
+      </div>
+      <div style={{ color: t.subtext, fontSize: 11, marginTop: 8 }}>
+        Email sends from your backend via Resend. Text copies a summary to clipboard and opens your phone's SMS app.
+      </div>
+      {toast && (
+        <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: 8, background: toast.ok ? (data.lightMode ? "#dcfce7" : "#052e16") : (data.lightMode ? "#fee2e2" : "#450a0a"), color: toast.ok ? (data.lightMode ? "#166534" : "#4ade80") : "#f87171", fontSize: 12, border: `1px solid ${toast.ok ? "#16a34a" : "#ef4444"}` }}>
+          {toast.ok ? "✅ " : "⚠️ "}{toast.msg}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── ESTIMATES ────────────────────────────────────────────────────────────────
 function Estimates({ data, setData, t }) {
   const [view, setView] = useState("list");
@@ -1145,7 +1335,7 @@ function Estimates({ data, setData, t }) {
   const [selected, setSelected] = useState(null);
 
   const nextEstNum = () => { const nums = data.estimates.map(e => parseInt((e.number || "").replace("EST-","")) || 0); return Math.max(0, ...nums) + 1; };
-  const blank = () => ({ id: uid(), number: `EST-${String(nextEstNum()).padStart(4, "0")}`, customerId: "", customerName: "", jobTitle: "", date: today(), lines: [{ id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "labor" }], taxRate: 0, notes: "", status: "draft" });
+  const blank = () => ({ id: uid(), number: `EST-${String(nextEstNum()).padStart(4, "0")}`, customerId: "", customerName: "", jobTitle: "", date: today(), lines: [{ id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "labor" }], taxRate: 0, notes: "", status: "draft", photos: [], depositRequested: false, depositAmount: 0, depositPercent: null });
   const open = e => { setSelected(e || null); setForm(e ? JSON.parse(JSON.stringify(e)) : blank()); setView("form"); };
   const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, { id: uid(), description: "", qty: 1, unit: "ea", unitPrice: 0, type: "material" }] }));
   const removeLine = id => setForm(f => ({ ...f, lines: f.lines.filter(l => l.id !== id) }));
@@ -1163,11 +1353,50 @@ function Estimates({ data, setData, t }) {
   };
   const convert = est => {
     const nextInvNum = () => { const nums = data.invoices.map(i => parseInt((i.number || "").replace("INV-","")) || 0); return Math.max(0, ...nums) + 1; };
-    const inv = { id: uid(), number: `INV-${String(nextInvNum()).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", openSignDocId: "", openSignSentTo: "", openSignSentAt: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: [] };
+    const estTotal = Number(est.total || 0);
+    const carryDeposit = !!est.depositRequested;
+    const depAmt = est.depositPercent ? estTotal * (Number(est.depositPercent) / 100) : Number(est.depositAmount || 0);
+    const inv = { id: uid(), number: `INV-${String(nextInvNum()).padStart(4, "0")}`, customerId: est.customerId, customerName: est.customerName, estimateId: est.id, date: today(), dueDate: "", jobTitle: est.jobTitle, lines: JSON.parse(JSON.stringify(est.lines)), taxRate: est.taxRate, total: est.total, status: "unpaid", notes: est.notes, openSignUrl: "", openSignDocId: "", openSignSentTo: "", openSignSentAt: "", signedAt: "", contractTerms: { paymentSchedule: "", warranty: "", permits: "", additional: "" }, jobStartDate: "", jobEndDate: "", jobAddress: "", photos: Array.isArray(est.photos) ? JSON.parse(JSON.stringify(est.photos)) : [], depositRequested: carryDeposit, depositAmount: carryDeposit ? depAmt : 0, depositPaid: false, depositPaidDate: null, payments: [] };
     setData(d => ({ ...d, invoices: [...d.invoices, inv], estimates: d.estimates.map(e => e.id === est.id ? { ...e, status: "approved" } : e) }));
     alert(`Invoice ${inv.number} created!`);
   };
   const del = id => { if (window.confirm("Delete?")) setData(d => ({ ...d, estimates: d.estimates.filter(e => e.id !== id) })); };
+
+  // Estimate photo handlers — same pattern as invoices but under users/{uid}/estimatePhotos/{estimateId}/
+  const addEstPhoto = async (e) => {
+    if (!form) return;
+    const MAX_PHOTO_MB = 10;
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!auth.currentUser) { alert("Sign in to upload photos."); return; }
+    for (const file of files) {
+      if (file.size > MAX_PHOTO_MB * 1024 * 1024) { alert(`Photo "${file.name}" exceeds ${MAX_PHOTO_MB}MB limit.`); continue; }
+      try {
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = ev => resolve(ev.target.result);
+          reader.readAsDataURL(file);
+        });
+        const path = `users/${auth.currentUser.uid}/estimatePhotos/${form.id}/${Date.now()}_${file.name}`;
+        const ref = storageRef(storage, path);
+        await uploadString(ref, dataUrl, "data_url");
+        const url = await getDownloadURL(ref);
+        const photo = { id: uid(), url, storagePath: path, caption: "", label: "Before" };
+        setForm(f => ({ ...f, photos: [...(f.photos || []), photo] }));
+      } catch (err) {
+        console.error("Estimate photo upload error:", err);
+        alert(`Failed to upload "${file.name}": ${err.message}`);
+      }
+    }
+  };
+  const updEstPhoto = (photoId, patch) => setForm(f => ({ ...f, photos: (f.photos || []).map(p => p.id === photoId ? { ...p, ...patch } : p) }));
+  const delEstPhoto = async (photoId) => {
+    const photo = (form.photos || []).find(p => p.id === photoId);
+    if (photo?.storagePath) {
+      try { await deleteObject(storageRef(storage, photo.storagePath)); } catch (e) { console.error("Storage delete error:", e); }
+    }
+    setForm(f => ({ ...f, photos: (f.photos || []).filter(p => p.id !== photoId) }));
+  };
 
   if (view === "form" && form) return (
     <div>
@@ -1224,6 +1453,74 @@ function Estimates({ data, setData, t }) {
         <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={4} placeholder="Scope details, exclusions, terms..."
           style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 12px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" }} />
       </Card>
+
+      {/* Deposit Request */}
+      <Card t={t} style={{ marginBottom: 14 }}>
+        <SectionLabel t={t}>💰 Deposit Request</SectionLabel>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div>
+            <div style={{ color: t.text, fontSize: 13, fontWeight: 600 }}>Request deposit with estimate</div>
+            <div style={{ color: t.subtext, fontSize: 11, marginTop: 2 }}>Carries to invoice when converted</div>
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", gap: 8 }}>
+            <input type="checkbox" checked={!!form.depositRequested} onChange={e => setForm(f => ({ ...f, depositRequested: e.target.checked }))} style={{ width: 18, height: 18, cursor: "pointer" }} />
+          </label>
+        </div>
+        {form.depositRequested && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>Amount ($)</label>
+              <input type="number" maxLength={500} value={form.depositAmount || ""} onChange={e => setForm(f => ({ ...f, depositAmount: e.target.value, depositPercent: null }))} placeholder="0.00"
+                style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>Or %</label>
+              <input type="number" maxLength={500} value={form.depositPercent || ""} onChange={e => setForm(f => ({ ...f, depositPercent: e.target.value, depositAmount: 0 }))} placeholder="50"
+                style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1", color: t.subtext, fontSize: 11 }}>
+              {(() => {
+                const tot = total(form);
+                const dep = form.depositPercent ? tot * (Number(form.depositPercent) / 100) : Number(form.depositAmount || 0);
+                return tot > 0 ? `Deposit required: ${fmt$(dep)} of ${fmt$(tot)} total` : "Add line items to compute deposit";
+              })()}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Photos */}
+      <Card t={t} style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <SectionLabel t={t}>📷 Photos</SectionLabel>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg,${t.accent},${t.accent2})`, color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            <Icon d={IC.camera} size={13} color="#fff" /> Add Photos
+            <input type="file" accept="image/*" multiple onChange={addEstPhoto} style={{ display: "none" }} />
+          </label>
+        </div>
+        {(!form.photos || form.photos.length === 0) ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: t.subtext, fontSize: 13 }}>No photos yet</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {form.photos.map(photo => (
+              <div key={photo.id} style={{ background: t.surface2, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                <div style={{ position: "relative" }}>
+                  <img src={photo.url || photo.dataUrl} alt={photo.caption || photo.label || "Estimate photo"} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                  <button onClick={() => delEstPhoto(photo.id)} style={{ position: "absolute", top: 4, right: 4, background: "#dc2626", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={IC.x} size={12} color="#fff" /></button>
+                  <select value={photo.label} onChange={e => updEstPhoto(photo.id, { label: e.target.value })} style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontFamily: "inherit" }}>
+                    <option>Before</option><option>After</option><option>During</option><option>Detail</option>
+                  </select>
+                </div>
+                <input value={photo.caption || ""} maxLength={500} onChange={e => updEstPhoto(photo.id, { caption: e.target.value })} placeholder="Caption (optional)" style={{ width: "100%", background: "transparent", border: "none", borderTop: `1px solid ${t.border}`, padding: "6px 8px", color: t.text, fontSize: 11, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Send actions — Email + Text */}
+      <EstimateSendActions form={form} data={data} t={t} />
+
       <div style={{ display: "flex", gap: 10 }}><Btn t={t} onClick={save}><Icon d={IC.check} size={14} /> Save</Btn><Btn t={t} variant="ghost" onClick={() => setView("list")}>Cancel</Btn></div>
     </div>
   );
@@ -2751,6 +3048,189 @@ function OpenSignSettings({ t }) {
     </div>
   );
 }
+// ─── INVOICE PAYMENTS & DEPOSIT ───────────────────────────────────────────────
+function InvoicePayments({ inv, total, upd, markPaid, t, lightMode }) {
+  const [showDeposit, setShowDeposit] = useState(!!inv.depositRequested);
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [pay, setPay] = useState({ date: today(), amount: "", method: "Cash", note: "" });
+
+  const payments = Array.isArray(inv.payments) ? inv.payments : [];
+  const paymentsSum = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const depositPaidAmt = inv.depositPaid ? Number(inv.depositAmount || 0) : 0;
+  // Deposit payments live in `payments[]` once recorded — to avoid double-counting,
+  // we treat `depositPaid` as a flag and the actual money lives in `payments[]`.
+  const balance = Math.max(0, Number(total || 0) - paymentsSum);
+
+  const updateDepositField = (patch) => upd(inv.id, patch);
+
+  const markDepositPaid = () => {
+    const amt = Number(inv.depositAmount || 0);
+    if (amt <= 0) { alert("Set a deposit amount first."); return; }
+    const entry = { id: uid(), date: today(), amount: amt, method: "Deposit", note: "Deposit payment" };
+    upd(inv.id, {
+      depositPaid: true,
+      depositPaidDate: today(),
+      payments: [...payments, entry],
+    });
+  };
+
+  const recordPayment = () => {
+    const amount = Number(pay.amount || 0);
+    if (!amount || amount <= 0) { alert("Enter a valid amount."); return; }
+    const entry = { id: uid(), date: pay.date || today(), amount, method: pay.method || "Other", note: pay.note || "" };
+    const newPayments = [...payments, entry];
+    const newSum = newPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const patch = { payments: newPayments };
+    if (newSum >= Number(total || 0) && inv.status !== "paid") {
+      if (window.confirm(`Balance is now $0. Mark invoice as PAID?`)) {
+        patch.status = "paid";
+        patch.paidAt = today();
+      }
+    }
+    upd(inv.id, patch);
+    setPay({ date: today(), amount: "", method: "Cash", note: "" });
+    setShowPayForm(false);
+  };
+
+  const removePayment = (pid) => {
+    if (!window.confirm("Remove this payment record?")) return;
+    upd(inv.id, { payments: payments.filter(p => p.id !== pid) });
+  };
+
+  const pillStyle = (active) => ({
+    background: active ? `${t.accent}22` : t.surface2,
+    border: `1px solid ${active ? t.accent : t.border}`,
+    color: active ? t.accent : t.subtext,
+    borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+  });
+
+  return (
+    <Card t={t} style={{ marginBottom: 14, border: `1px solid ${t.border}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <SectionLabel t={t}>💰 Deposit & Payments</SectionLabel>
+        <button onClick={() => setShowDeposit(s => !s)} style={pillStyle(showDeposit)}>
+          {showDeposit ? "▲ Hide deposit" : "▼ Deposit settings"}
+        </button>
+      </div>
+
+      {/* Deposit section (collapsed by default) */}
+      {showDeposit && (
+        <div style={{ background: t.surface2, borderRadius: 10, padding: 12, marginBottom: 12, border: `1px solid ${t.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ color: t.text, fontSize: 13, fontWeight: 600 }}>Request deposit</div>
+            <input type="checkbox" checked={!!inv.depositRequested} onChange={e => updateDepositField({ depositRequested: e.target.checked })} style={{ width: 18, height: 18, cursor: "pointer" }} />
+          </div>
+          {inv.depositRequested && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "end", marginBottom: 8 }}>
+                <div>
+                  <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Deposit Amount ($)</label>
+                  <input type="number" maxLength={500} value={inv.depositAmount || ""} onChange={e => updateDepositField({ depositAmount: e.target.value })} placeholder="0.00" disabled={inv.depositPaid}
+                    style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", opacity: inv.depositPaid ? 0.6 : 1 }} />
+                </div>
+                {!inv.depositPaid ? (
+                  <button onClick={markDepositPaid} style={{ background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
+                    ✅ Mark Deposit Paid
+                  </button>
+                ) : (
+                  <div style={{ background: lightMode ? "#dcfce7" : "#052e16", border: "1px solid #16a34a", borderRadius: 8, padding: "8px 12px", color: lightMode ? "#166534" : "#4ade80", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                    ✓ Paid {fmtDate(inv.depositPaidDate)}
+                  </div>
+                )}
+              </div>
+              <div style={{ color: t.subtext, fontSize: 11 }}>
+                Deposit appears on the contract; once received, it gets recorded as a payment in the history below.
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Payment History */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ color: t.text, fontSize: 13, fontWeight: 700 }}>Payment History</div>
+        {!showPayForm && (
+          <button onClick={() => setShowPayForm(true)} style={{ background: `linear-gradient(135deg,${t.accent},${t.accent2})`, border: "none", borderRadius: 8, padding: "6px 12px", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            + Record Payment
+          </button>
+        )}
+      </div>
+
+      {showPayForm && (
+        <div style={{ background: t.surface2, borderRadius: 10, padding: 12, marginBottom: 12, border: `1px solid ${t.accent}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Date</label>
+              <input type="date" value={pay.date} onChange={e => setPay(p => ({ ...p, date: e.target.value }))}
+                style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Amount ($)</label>
+              <input type="number" maxLength={500} value={pay.amount} onChange={e => setPay(p => ({ ...p, amount: e.target.value }))} placeholder="0.00"
+                style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Method</label>
+              <select value={pay.method} onChange={e => setPay(p => ({ ...p, method: e.target.value }))}
+                style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}>
+                {["Cash", "Check", "Venmo", "Zelle", "Cash App", "Other"].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Note (optional)</label>
+              <input type="text" maxLength={500} value={pay.note} onChange={e => setPay(p => ({ ...p, note: e.target.value }))} placeholder="Check #, memo, etc."
+                style={{ width: "100%", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button onClick={recordPayment} style={{ flex: 1, background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "9px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Save Payment</button>
+            <button onClick={() => setShowPayForm(false)} style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 14px", color: t.subtext, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {payments.length === 0 ? (
+        <div style={{ color: t.muted, fontSize: 12, textAlign: "center", padding: "12px 0" }}>No payments recorded yet</div>
+      ) : (
+        <div style={{ marginBottom: 10 }}>
+          {payments.map(p => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: t.surface2, borderRadius: 8, marginBottom: 6, border: `1px solid ${t.border}` }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: t.text, fontSize: 13, fontWeight: 600 }}>{fmt$(p.amount)} <span style={{ color: t.subtext, fontWeight: 400, fontSize: 11 }}>· {p.method}</span></div>
+                <div style={{ color: t.subtext, fontSize: 11 }}>{fmtDate(p.date)}{p.note ? ` · ${p.note}` : ""}</div>
+              </div>
+              <button onClick={() => removePayment(p.id)} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, fontFamily: "inherit" }}>
+                <Icon d={IC.trash} size={14} color="#ef4444" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Balance summary */}
+      <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 10, marginTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 4 }}>
+          <span>Invoice Total</span><span>{fmt$(total)}</span>
+        </div>
+        {paymentsSum > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", color: t.subtext, fontSize: 13, marginBottom: 4 }}>
+            <span>Payments Received</span><span style={{ color: "#4ade80" }}>−{fmt$(paymentsSum)}</span>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", color: t.text, fontSize: 16, fontWeight: 800, paddingTop: 8, borderTop: `1px solid ${t.border}`, marginTop: 6 }}>
+          <span>Balance Due</span>
+          <span style={{ color: balance === 0 ? "#4ade80" : "#f97316" }}>{fmt$(balance)}</span>
+        </div>
+        {balance === 0 && inv.status !== "paid" && (
+          <button onClick={() => markPaid(inv.id)} style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg,#059669,#047857)", border: "none", borderRadius: 8, padding: "10px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            ✅ Mark Invoice as Paid
+          </button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ─── INVOICES ─────────────────────────────────────────────────────────────────
 function Invoices({ data, setData, t, initialFilter }) {
   const [view, setView] = useState("list");
@@ -2963,6 +3443,9 @@ function Invoices({ data, setData, t, initialFilter }) {
           </div>
           <OpenSignSend inv={inv} data={data} upd={upd} t={t} />
         </Card>
+
+        {/* ── PAYMENTS & DEPOSIT ─────────────────────────────────── */}
+        <InvoicePayments inv={inv} total={total} upd={upd} markPaid={markPaid} t={t} lightMode={data.lightMode} />
 
         {/* ── CHANGE ORDERS ─────────────────────────────────────── */}
         <ChangeOrders inv={inv} data={data} setData={setData} t={t} />
