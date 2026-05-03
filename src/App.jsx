@@ -107,6 +107,7 @@ const STATUSES = [
   { key:"active",    label:"In Progress",    color:"#8b5cf6", bg:"#2e1065", lightColor:"#7c3aed", lightBg:"#ede9fe" },
   { key:"complete",  label:"Complete",       color:"#10b981", bg:"#022c22", lightColor:"#059669", lightBg:"#d1fae5" },
   { key:"invoiced",  label:"Invoiced",       color:"#f97316", bg:"#431407", lightColor:"#c2410c", lightBg:"#ffedd5" },
+  { key:"signed",    label:"Signed",         color:"#4ade80", bg:"#0d2d1a", lightColor:"#166534", lightBg:"#dcfce7" },
   { key:"paid",      label:"Paid",           color:"#4ade80", bg:"#052e16", lightColor:"#16a34a", lightBg:"#dcfce7" },
 ];
 const statusFor = (k, light = false) => {
@@ -1241,7 +1242,17 @@ function Estimates({ data, setData, t }) {
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Btn t={t} size="sm" variant="ghost" onClick={() => open(est)}><Icon d={IC.edit} size={12} /> Edit</Btn>
-              {est.status !== "approved" && <Btn t={t} size="sm" variant="success" onClick={() => convert(est)}><Icon d={IC.contract} size={12} /> → Invoice+Contract</Btn>}
+              {(() => {
+                const alreadyConverted = data.invoices.some(i => i.estimateId === est.id);
+                return (
+                  <Btn t={t} size="sm" variant="success" onClick={() => {
+                    if (alreadyConverted && !window.confirm("This will create a new invoice from the current estimate lines. The original invoice will not be affected.")) return;
+                    convert(est);
+                  }}>
+                    <Icon d={IC.contract} size={12} /> {alreadyConverted ? "Re-convert to Invoice" : "→ Invoice+Contract"}
+                  </Btn>
+                );
+              })()}
               <Btn t={t} size="sm" variant="danger" onClick={() => del(est.id)}><Icon d={IC.trash} size={12} /></Btn>
             </div>
           </Card>
@@ -1776,6 +1787,7 @@ function OpenSignSend({ inv, data, upd, t }) {
         if (cancelled || !completed || !signedUrl) return;
         const patch = { signedPdfUrl: signedUrl };
         if (!inv.signedAt) patch.signedAt = today();
+        if (inv.status !== "paid") patch.status = "signed";
         upd(inv.id, patch);
       } catch (e) {
         // Best-effort poll — silent failure is fine, user can still mark signed manually.
@@ -2892,8 +2904,8 @@ function Invoices({ data, setData, t, initialFilter }) {
             <h2 style={{ color: t.text, fontSize: 18, fontWeight: 700, margin: 0 }}>{typeof inv.customerName === "string" ? inv.customerName : String(inv.customerName || "")}</h2>
           </div>
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
-            <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : "UNPAID"}</span>
+            <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : "#f97316", fontSize: 22, fontWeight: 800 }}>{fmt$(total)}</div>
+            <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}</span>
           </div>
         </div>
 
@@ -3147,9 +3159,9 @@ function Invoices({ data, setData, t, initialFilter }) {
                   <div style={{ color: t.subtext, fontSize: 12 }}>{typeof inv.jobTitle === "string" ? inv.jobTitle : String(inv.jobTitle || "")} · {fmtDate(inv.date)}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ color: inv.status === "paid" ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
-                  <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
-                    {inv.status === "paid" ? "✓ PAID" : "UNPAID"}
+                  <div style={{ color: (inv.status === "paid" || inv.status === "signed") ? "#4ade80" : "#f97316", fontSize: 18, fontWeight: 800 }}>{fmt$(total)}</div>
+                  <span style={{ background: inv.status === "paid" ? (data.lightMode ? "#dcfce7" : "#052e16") : inv.status === "signed" ? (data.lightMode ? "#dcfce7" : "#0d2d1a") : (data.lightMode ? "#ffedd5" : "#431407"), color: inv.status === "paid" ? (data.lightMode ? "#16a34a" : "#4ade80") : inv.status === "signed" ? (data.lightMode ? "#166534" : "#4ade80") : (data.lightMode ? "#c2410c" : "#f97316"), borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                    {inv.status === "paid" ? "✓ PAID" : inv.status === "signed" ? "✓ SIGNED" : "UNPAID"}
                   </span>
                 </div>
               </div>
