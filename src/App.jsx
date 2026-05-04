@@ -2367,12 +2367,22 @@ function OpenSignSend({ inv, data, upd, t }) {
           >✕ Close</button>
         </div>
       </div>
-      <iframe
-        src={signingIframeUrl}
-        style={{ flex: 1, border: 'none', width: '100%' }}
-        title="Sign Contract"
-        allow="camera; microphone"
-      />
+      <div
+        onClick={() => window.open(signingIframeUrl, '_blank')}
+        style={{
+          background: t.surface2,
+          border: `2px solid ${t.accent}`,
+          borderRadius: 12,
+          padding: '32px 16px',
+          textAlign: 'center',
+          cursor: 'pointer',
+          margin: '8px 0',
+        }}
+      >
+        <div style={{ fontSize: 48, marginBottom: 8 }}>✍️</div>
+        <div style={{ color: t.text, fontWeight: 700, fontSize: 18 }}>Tap to Sign Contract</div>
+        <div style={{ color: t.subtext, fontSize: 13, marginTop: 4 }}>Opens in a new tab — return here when done</div>
+      </div>
       <div style={{ padding: '8px 16px', background: t.surface, borderTop: `1px solid ${t.border}`, color: t.subtext, fontSize: 12, textAlign: 'center', flexShrink: 0 }}>
         After signing, close this window and the invoice will update automatically.
       </div>
