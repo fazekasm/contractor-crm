@@ -2055,12 +2055,20 @@ function OpenSignSend({ inv, data, upd, t }) {
   const [contractPreviewHtml, setContractPreviewHtml] = useState(null);
   const [pendingSendInvoice, setPendingSendInvoice]   = useState(null);
   const [signingIframeUrl, setSigningIframeUrl]       = useState(null);
+  const [includeContractor, setIncludeContractor] = useState(false);
+  const [contractorEmail, setContractorEmail]     = useState("");
+  const [signerUrls, setSignerUrls]               = useState(inv.signerUrls || {});
 
   // If the customer record loads/changes after mount, fill any still-empty fields
   useEffect(() => {
     if (cust?.email && !signerEmail) setSignerEmail(cust.email);
     if (cust?.name  && !signerName)  setSignerName(cust.name);
   }, [cust]);
+  const co = data.company || {};
+  useEffect(() => {
+    if (co.email && !contractorEmail) setContractorEmail(co.email);
+  }, [co]);
+
 
   // Listen for completion messages posted by the OpenSign iframe.
   useEffect(() => {
@@ -2128,6 +2136,7 @@ function OpenSignSend({ inv, data, upd, t }) {
 
   const sendForSignature = async () => {
     if (!signerEmail.trim()) { setErrorMsg("Enter the customer's email address."); return; }
+    if (includeContractor && !contractorEmail.trim()) { setErrorMsg("Enter the contractor email or uncheck contractor signer."); return; }
     setErrorMsg("");
 
     const co = data.company || {};
@@ -2142,134 +2151,26 @@ function OpenSignSend({ inv, data, upd, t }) {
 
     setPhase("sending"); setErrorMsg("");
 
-    // 30s timeout — a hung fetch was leaving the UI on "sending" forever.
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
 
     try {
-      // Build the invoice+contract HTML
-      const co   = data.company || {};
-
-      // If a custom contract PDF was uploaded in Settings, send that instead of the generated HTML.
-      // customContract is stored as a data URL (data:application/pdf;base64,...) — strip the prefix.
-      // Backend detects %PDF magic bytes and routes accordingly.
-      let base64File;
-      if (co.customContract) {
-        const m = /^data:[^;]+;base64,(.*)$/.exec(co.customContract);
-        base64File = m ? m[1] : co.customContract;
-      } else {
-        const html = buildContractHTML(invoice, cust, co, invoice.contractTerms || {}, co.logo || "");
-        base64File = htmlToBase64(html);
-      }
-
-      // Calculate total for the document title
-      const sub   = (invoice.lines || []).reduce((s, l) => s + Number(l.qty) * Number(l.unitPrice), 0);
-      const total = sub + sub * (Number(invoice.taxRate || 0) / 100);
-      const docTitle = `${invoice.number} — ${invoice.customerName} — $${total.toFixed(2)}`;
-
-      // OpenSign Create Document payload
-      // Signature widget placed at bottom of last page (page 2 for typical contract)
-      // These coordinates work with our HTML-rendered PDF layout
-      const payload = {
-        title:    docTitle,
-        filebase64: `data:text/html;base64,${base64File}`,
-        note:     `Please review and sign the contract and invoice for ${docTitle}. Contact ${co.name || "your contractor"} with any questions.`,
-        signers: [
-          {
-            name:  signerName || invoice.customerName,
-            email: signerEmail.trim(),
-            phone: cust?.phone || "",
-          }
-        ],
-        signerdetails: [
-          {
-            name:  signerName || invoice.customerName,
-            email: signerEmail.trim(),
-            widgets: [
-              {
-                type: "signature",
-                page: 2,
-                x:    310,
-                y:    680,
-                w:    180,
-                h:    40,
-                options: { hint: "Sign here to approve the contract and invoice" }
-              },
-              {
-                type: "date",
-                page: 2,
-                x:    310,
-                y:    730,
-                w:    120,
-                h:    20,
-                options: {
-                  required:     true,
-                  name:         "signed_date",
-                  signing_date: true,
-                  format:       "mm/dd/yyyy",
-                  hint:         "Date"
-                }
-              },
-              {
-                type: "name",
-                page: 2,
-                x:    310,
-                y:    760,
-                w:    180,
-                h:    20,
-                options: {
-                  required: true,
-                  name:     "signer_name",
-                  hint:     "Print name"
-                }
-              }
-            ]
-          }
-        ],
-        sendmail: true,
-        expiredate: (() => {
-          const d = new Date();
-          d.setDate(d.getDate() + 30);
-          return d.toISOString().split("T")[0];
-        })()
-      };
-
-      let signingUrl = "";
-      let opensignDocId = "";
-      let backendDocId = "";
-
-      // ── Call contractor-crm-backend ──────────────────
       const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error("Not signed in — please refresh and sign in again.");
+      if (!token) throw new Error("Not signed in. Please refresh and sign in again.");
 
-      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send`, {
+      const res = await fetch(`${OPENSIGN_BACKEND_URL}/api/opensign/send-contract`, {
         method:  "POST",
         headers: {
           "Content-Type":  "application/json",
           "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
-          documentType: "invoice",
-          title:        docTitle,
-          note:         payload.note,
-          pdfBase64:    base64File,
-          signers: [
-            {
-              name:  co.name || "Contractor",
-              email: co.email || "",
-              phone: co.phone || "",
-              role:  "contractor",
-              signingOrder: 1,
-            },
-            {
-              name:  signerName || invoice.customerName,
-              email: signerEmail.trim(),
-              phone: cust?.phone || "",
-              role:  "customer",
-              signingOrder: 2,
-            },
-          ],
-          expiresInDays: 30,
+          invoiceId:               invoice.id,
+          customerEmail:           signerEmail.trim(),
+          customerName:            signerName || invoice.customerName,
+          includeContractorSigner: includeContractor,
+          contractorEmail:         includeContractor ? contractorEmail.trim() : undefined,
+          expiresInDays:           30,
         }),
         signal: ac.signal,
       });
@@ -2280,23 +2181,21 @@ function OpenSignSend({ inv, data, upd, t }) {
         throw new Error(detail || `Backend error: ${res.status}`);
       }
 
-      signingUrl   = json.signingUrl || "";
-      opensignDocId = json.opensignDocId || "";
-      backendDocId  = json.documentId   || "";
-      const contractorSigningUrl = json.contractorSigningUrl || "";
-
-      // Save to invoice
+      // Save results to invoice
       upd(invoice.id, {
-        openSignUrl:         signingUrl,
-        openSignDocId:       opensignDocId,
-        openSignBackendDocId: backendDocId,
+        openSignUrl:         json.signingUrl || "",
+        openSignDocId:       json.opensignDocId || "",
+        openSignBackendDocId: json.documentId || "",
         openSignSentTo:      signerEmail.trim(),
         openSignSentAt:      today(),
+        signerUrls:          json.signerUrls || {},
+        contractorSignUrl:   json.signerUrls?.contractor || "",
       });
 
-      // Show contractor's signing page in an in-app iframe modal so they sign first
-      // without leaving the app or being blocked by popup blockers.
-      if (contractorSigningUrl) setSigningIframeUrl(contractorSigningUrl);
+      setSignerUrls(json.signerUrls || {});
+
+      // Show contractor signing modal if contractor was included
+      if (json.signerUrls?.contractor) setSigningIframeUrl(json.signerUrls.contractor);
 
       setPhase("sent");
       setShowForm(false);
@@ -2309,7 +2208,6 @@ function OpenSignSend({ inv, data, upd, t }) {
       setPhase("error");
     } finally {
       clearTimeout(timer);
-      // Safety net so the UI never gets stuck on "sending" if neither branch fired.
       setPhase(p => p === "sending" ? "error" : p);
       setPendingSendInvoice(null);
     }
@@ -2458,6 +2356,23 @@ function OpenSignSend({ inv, data, upd, t }) {
           ↩️ Recall & Edit
         </button>
       </div>
+
+      {/* Per-signer URL buttons */}
+      {(signerUrls.contractor || inv.contractorSignUrl) && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${t.border}` }}>
+          <div style={{ color: t.accent, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Contractor Signing</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => { navigator.clipboard.writeText(signerUrls.contractor || inv.contractorSignUrl); alert("Contractor signing link copied!"); }}
+              style={{ background: t.surface2, border: `1px solid ${t.accent}`, borderRadius: 6, padding: "6px 12px", color: t.accent, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              Copy Contractor Link
+            </button>
+            <button onClick={() => setSigningIframeUrl(signerUrls.contractor || inv.contractorSignUrl)}
+              style={{ background: `linear-gradient(135deg,${t.accent},#6d28d9)`, border: "none", borderRadius: 6, padding: "6px 12px", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              Sign Now (In-App)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     {signingModal}
     </>
@@ -2491,6 +2406,25 @@ function OpenSignSend({ inv, data, upd, t }) {
           placeholder="customer@email.com"
           style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
       </div>
+      {/* Contractor signer toggle */}
+      <div style={{ background: data.lightMode ? "#f5f3ff" : "#0d1520", border: `1px solid ${data.lightMode ? "#ddd6fe" : "#1e1b4b"}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={includeContractor} onChange={e => setIncludeContractor(e.target.checked)}
+            style={{ accentColor: "#7c3aed", width: 16, height: 16 }} />
+          <span style={{ color: t.text, fontSize: 12, fontWeight: 600 }}>Include contractor as signer</span>
+        </label>
+        {includeContractor && (
+          <div style={{ marginTop: 10 }}>
+            <label style={{ display: "block", color: t.subtext, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Contractor Email</label>
+            <input type="email" value={contractorEmail} onChange={e => setContractorEmail(e.target.value)}
+              placeholder={(data.company || {}).email || "contractor@email.com"}
+              style={{ width: "100%", background: t.surface2, border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 12px", color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <div style={{ color: t.muted, fontSize: 10, marginTop: 4 }}>
+              Contractor will receive a separate signing link. You can also sign in-app after sending.
+            </div>
+          </div>
+        )}
+      </div>
       {errorMsg && (
         <div style={{ background: "#450a0a", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 12px", marginBottom: 10, color: "#f87171", fontSize: 12 }}>
           ⚠️ {errorMsg}
@@ -2500,7 +2434,7 @@ function OpenSignSend({ inv, data, upd, t }) {
         style={{ width: "100%", background: phase === "sending" ? "#4c1d95" : "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: phase === "sending" || !signerEmail.trim() ? "not-allowed" : "pointer", opacity: !signerEmail.trim() ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
         {phase === "sending"
           ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⚙️</span> Sending to OpenSign...</>
-          : <>✍️ Send Contract for Signature</>
+          : <>✍️ Send Contract for Signature{includeContractor ? " (Both Parties)" : ""}</>
         }
       </button>
       <div style={{ color: t.subtext, fontSize: 10, marginTop: 8, textAlign: "center" }}>
